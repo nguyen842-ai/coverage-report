@@ -12,6 +12,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
+    <!-- NẾU BẠN CHƯA CÓ FILE DATA M7 Ở ĐÂY THÌ PHẢI THÊM VÀO NHÉ -->
+    <!-- <script src="đường_dẫn_tới_file/dataM7.js"></script> -->
+
     <style>
         :root {
             --bg-dark: #1E2227;
@@ -82,12 +85,10 @@
             position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase;
         }
 
-        /* Styling cho dòng Quận/Huyện có thể click */
         .district-row { cursor: pointer; transition: background 0.2s; }
         .district-row:hover { background-color: rgba(255, 255, 255, 0.05); }
         .district-row .toggle-icon { display: inline-block; width: 16px; color: var(--color-accent); font-weight: bold; }
         
-        /* Styling cho dòng Phường/Xã (Mặc định ẩn) */
         .ward-row { display: none; background-color: #21252B; font-size: 12px; }
         .ward-row.show { display: table-row; }
         .ward-row td { border-bottom: 1px dashed #3F4451; color: #D1D5DB; }
@@ -159,18 +160,17 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const BUCKET_NAME = 'mappingdata';
+    
     const FILE_ROUTE = 'tuyen.xlsx'; 
-    const GEOJSON_FILE = 'gadm41_VNM_3.json'; 
+    // Đảm bảo tên file này là file bạn đã filter từ Mapshaper
+    const GEOJSON_FILE = 'phuong_xa_clean.json'; 
 
     const map = L.map('map', { zoomControl: false }).setView([10.8231, 106.6297], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-    // Tách riêng 2 mảng để tối ưu: Phường dùng để quét tọa độ, Huyện dùng để vẽ bản đồ
     let wardFeatures = []; 
-    let districtFeatures = []; 
-    
-    let allProcessedDistricts = []; // Dữ liệu gom nhóm cấp Huyện
+    let allProcessedDistricts = []; 
     let geoJsonLayer = null;
 
     async function initLoadAndProcess() {
@@ -180,30 +180,20 @@
         
         setTimeout(async () => {
             try {
-                // 1. Nạp và bóc tách không gian (Chỉ làm 1 lần)
                 if (wardFeatures.length === 0) {
                     const { data: geoUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([GEOJSON_FILE], 60);
                     let resGeo = await fetch(geoUrl[0].signedUrl);
                     let masterGeoJSON = await resGeo.json();
                     
                     masterGeoJSON.features.forEach(f => {
-                        let p = f.properties;
                         f._bbox = turf.bbox(f); 
-
-                        // TÁCH LỚP: Phường/Xã đẩy vào mảng quét tọa độ, Quận/Huyện đẩy vào mảng vẽ Map
-                        if (p.name && p.name.startsWith("VNM") || (p.NAME_2 && p.NAME_2 !== "NA")) {
-                            f.properties._level = "phuong_xa";
-                            wardFeatures.push(f);
-                        } else if (p.NAME_2 === "NA") {
-                            f.properties._level = "quan_huyen";
-                            districtFeatures.push(f);
-                        }
+                        // Vì file đã lọc sạch, tất cả đều là Phường/Xã
+                        wardFeatures.push(f);
                     });
 
                     populateProvinceFilter();
                 }
 
-                // 2. Nạp file Excel Khách hàng
                 const { data: excelUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([FILE_ROUTE], 60);
                 let resExcel = await fetch(excelUrl[0].signedUrl);
                 let arrBuffer = await resExcel.arrayBuffer();
@@ -223,7 +213,8 @@
     }
 
     function populateProvinceFilter() {
-        let provinces = [...new Set(districtFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
+        // Sử dụng NAME_1 vì chuẩn GADM lưu Tỉnh ở cột này
+        let provinces = [...new Set(wardFeatures.map(f => f.properties.NAME_1))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
@@ -234,11 +225,17 @@
         let isOrdered = false;
         let targetArray = window.dbSalesM7 || window.dbSalesM6 || window.dbSalesM5 || [];
         
-        if (Array.isArray(targetArray)) {
+        // Dùng parseInt để lờ đi các số 0 ở đầu do Excel tự động xóa
+        let cleanInputCode = parseInt(cusCode, 10);
+
+        if (Array.isArray(targetArray) && !isNaN(cleanInputCode)) {
             targetArray.forEach(line => {
-                if (line && line.cusCode && line.cusCode.toString().trim() === cusCode) {
-                    totalSales += parseFloat(line.sales) || 0;
-                    isOrdered = true;
+                if (line && line.cusCode) {
+                    let cleanDbCode = parseInt(line.cusCode, 10);
+                    if (cleanDbCode === cleanInputCode) {
+                        totalSales += parseFloat(line.sales) || 0;
+                        isOrdered = true;
+                    }
                 }
             });
         }
@@ -262,7 +259,6 @@
             let salesSummary = getCustomerSalesSummary(ma_kh);
             let matchedWard = null;
 
-            // BẪY TỌA ĐỘ: Chỉ quét duy nhất trên mảng Phường/Xã (wardFeatures)
             if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                 let pt = turf.point([lng, lat]);
 
@@ -277,13 +273,14 @@
                 }
             }
 
+            // Map lại chuẩn thuộc tính file GADM: NAME_1 (Tỉnh), NAME_2 (Quận), NAME_3 (Phường)
             if (matchedWard) {
                 records.push({
                     cusCode: ma_kh,
                     area: area,
-                    province: matchedWard.COUNTRY,    // TRUY NGƯỢC RA TỈNH
-                    district: matchedWard.NAME_1,     // TRUY NGƯỢC RA HUYỆN
-                    ward: matchedWard.NAME_2,         // TRUY NGƯỢC RA PHƯỜNG
+                    province: matchedWard.NAME_1 || "Chưa rõ", 
+                    district: matchedWard.NAME_2 || "Chưa rõ",
+                    ward: matchedWard.NAME_3 || matchedWard.VARNAME_3 || "Chưa rõ", 
                     sales: salesSummary.sales,
                     isOrdered: salesSummary.isOrdered
                 });
@@ -300,28 +297,24 @@
         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
         [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
 
-        // Gom nhóm dữ liệu theo Phân Cấp (Hierarchical Aggregation)
         allProcessedDistricts = aggregateHierarchicalRows(records);
         filterData();
     }
 
-    // GOM NHÓM DỮ LIỆU: Quận/Huyện là cha, Phường/Xã là con
     function aggregateHierarchicalRows(records) {
         let districtGroups = {};
         
         records.forEach(r => {
             let distKey = `${r.area}|${r.province}|${r.district}`;
             
-            // 1. Tạo node cha (Quận/Huyện)
             if (!districtGroups[distKey]) {
                 districtGroups[distKey] = {
                     area: r.area, province: r.province, district: r.district,
                     cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
-                    wards: {} // Chứa danh sách các phường con
+                    wards: {} 
                 };
             }
             
-            // 2. Tạo node con (Phường/Xã)
             let wardKey = r.ward;
             if (!districtGroups[distKey].wards[wardKey]) {
                 districtGroups[distKey].wards[wardKey] = {
@@ -330,22 +323,17 @@
                 };
             }
 
-            // Đổ dữ liệu vào Quận/Huyện
             districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
             if (r.isOrdered) districtGroups[distKey].cusOrderedSet.add(r.cusCode);
 
-            // Đổ dữ liệu vào Phường/Xã chi tiết
             districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
             if (r.isOrdered) districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
         });
 
-        // Tính tổng doanh thu bằng cách duyệt Set Unique
         return Object.values(districtGroups).map(d => {
-            // Tính tổng doanh số Cấp Quận
             let distRev = 0;
             d.cusOrderedSet.forEach(cus => distRev += getCustomerSalesSummary(cus).sales);
             
-            // Tính tổng doanh số Cấp Phường
             let wardArr = Object.values(d.wards).map(w => {
                 let wRev = 0;
                 w.cusOrderedSet.forEach(cus => wRev += getCustomerSalesSummary(cus).sales);
@@ -362,7 +350,7 @@
                 onRoute: d.cusOnRouteSet.size,
                 ordered: d.cusOrderedSet.size,
                 revenue: distRev,
-                wardsData: wardArr // Gắn mảng phường con vào Quận cha
+                wardsData: wardArr 
             };
         });
     }
@@ -371,7 +359,6 @@
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        // Lọc dữ liệu Quận/Huyện đưa lên bảng
         let displayTableData = allProcessedDistricts.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
@@ -379,13 +366,12 @@
         });
         renderTableRows(displayTableData);
 
-        // Map doanh số từ mảng dữ liệu vào layer districtFeatures để vẽ bản đồ
-        let mapFeatures = districtFeatures.filter(f => {
+        // Mượn lớp Phường/Xã để vẽ bản đồ nhưng đồng bộ số liệu hiển thị lên cấp Quận/Huyện
+        let mapFeatures = wardFeatures.filter(f => {
             let p = f.properties;
-            if (selectedProvince && p.COUNTRY !== selectedProvince) return false;
+            if (selectedProvince && p.NAME_1 !== selectedProvince) return false;
             
-            // Tra cứu doanh thu từ kết quả xử lý
-            let matchData = allProcessedDistricts.find(d => d.province === p.COUNTRY && d.district === p.NAME_1);
+            let matchData = allProcessedDistricts.find(d => d.province === p.NAME_1 && d.district === p.NAME_2);
             p._mapOnRoute = matchData ? matchData.onRoute : 0;
             p._mapOrdered = matchData ? matchData.ordered : 0;
             p._mapRevenue = matchData ? matchData.revenue : 0;
@@ -396,7 +382,6 @@
         renderMapLayer(mapFeatures);
     }
 
-    // SỰ KIỆN GIAO DIỆN: Click mở/đóng danh sách Phường Xã
     function toggleWards(districtId) {
         let wardRows = document.querySelectorAll(`.ward-row-${districtId}`);
         let icon = document.getElementById(`icon-${districtId}`);
@@ -421,9 +406,8 @@
         rowsData.sort((a, b) => b.revenue - a.revenue);
 
         rowsData.forEach((p, index) => {
-            let distId = `dist_${index}`; // ID giả để nhóm Quận Huyện và Phường Xã
+            let distId = `dist_${index}`; 
 
-            // Render dòng Quận Huyện (Cha)
             tbody.innerHTML += `
                 <tr class="district-row" onclick="toggleWards('${distId}')">
                     <td style="color: var(--color-light-1);">${p.area}</td>
@@ -438,7 +422,6 @@
                 </tr>
             `;
 
-            // Render các dòng Phường Xã (Con - Mặc định bị ẩn)
             p.wardsData.forEach(w => {
                 tbody.innerHTML += `
                     <tr class="ward-row ward-row-${distId}">
@@ -466,7 +449,6 @@
     function renderMapLayer(featuresList) {
         if (geoJsonLayer) { map.removeLayer(geoJsonLayer); }
 
-        // Lọc bỏ những quận không có doanh thu để bản đồ thoáng hơn (Tùy chọn)
         let displayCollection = turf.featureCollection(featuresList);
 
         geoJsonLayer = L.geoJSON(displayCollection, {
@@ -483,8 +465,8 @@
                 let p = feature.properties;
                 layer.bindPopup(`
                     <div style="font-size:12px; line-height: 1.6;">
-                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NAME_1}</b><br>
-                        Tỉnh: <b>${p.COUNTRY}</b><br>
+                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NAME_2}</b><br>
+                        Tỉnh: <b>${p.NAME_1}</b><br>
                         <hr style="border-color:#4b5563; margin:5px 0;">
                         Khách trên tuyến: <b>${p._mapOnRoute}</b><br>
                         Khách lên đơn: <b>${p._mapOrdered}</b><br>
