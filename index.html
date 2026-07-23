@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - Chuẩn Dữ Liệu Doanh Số</title>
+    <title>Báo Cáo Coverage - Drilldown Tối Ưu</title>
     
     <!-- Thư viện chuyên dụng -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -37,7 +37,6 @@
 
         #app-container { display: flex; height: 100vh; width: 100%; }
         
-        /* 70% Báo cáo bên trái */
         #report-panel { 
             width: 70%; height: 100%; 
             display: flex; flex-direction: column; 
@@ -45,40 +44,20 @@
         }
 
         .header-section {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 15px;
-            flex-wrap: wrap;
-            gap: 15px;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 15px; border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px; flex-wrap: wrap; gap: 15px;
         }
 
         .header-section h2 { margin: 0; color: var(--color-light-1); font-size: 18px; }
 
-        .filter-group {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .filter-item {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
+        .filter-group { display: flex; gap: 10px; align-items: center; }
+        .filter-item { display: flex; flex-direction: column; gap: 4px; }
         .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; }
-
         select {
-            background: var(--bg-panel);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            padding: 8px 12px;
-            border-radius: 6px;
-            outline: none;
-            font-size: 13px;
+            background: var(--bg-panel); color: var(--text-main);
+            border: 1px solid var(--border-color); padding: 8px 12px;
+            border-radius: 6px; outline: none; font-size: 13px;
         }
 
         .btn-primary { 
@@ -91,34 +70,36 @@
         .btn-primary:disabled { background-color: #4B5563; color: var(--text-muted); cursor: not-allowed; }
 
         #table-container { 
-            flex-grow: 1; overflow-y: auto; 
-            background: var(--bg-panel);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
+            flex-grow: 1; overflow-y: auto; background: var(--bg-panel);
+            border-radius: 8px; border: 1px solid var(--border-color);
         }
 
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th, td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
         
         th { 
-            background-color: var(--color-primary); 
-            color: var(--color-light-2); 
-            position: sticky; top: 0; z-index: 2; 
-            font-size: 11px; text-transform: uppercase;
+            background-color: var(--color-primary); color: var(--color-light-2); 
+            position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase;
         }
 
-        tr:hover { background-color: rgba(255, 255, 255, 0.03); }
+        /* Styling cho dòng Quận/Huyện có thể click */
+        .district-row { cursor: pointer; transition: background 0.2s; }
+        .district-row:hover { background-color: rgba(255, 255, 255, 0.05); }
+        .district-row .toggle-icon { display: inline-block; width: 16px; color: var(--color-accent); font-weight: bold; }
+        
+        /* Styling cho dòng Phường/Xã (Mặc định ẩn) */
+        .ward-row { display: none; background-color: #21252B; font-size: 12px; }
+        .ward-row.show { display: table-row; }
+        .ward-row td { border-bottom: 1px dashed #3F4451; color: #D1D5DB; }
+
         .num-right { text-align: right; font-weight: bold; }
         .text-green { color: #10B981; }
         .text-orange { color: var(--color-accent); }
 
-        /* 30% Bản đồ bên phải */
         #map-panel { width: 30%; height: 100%; position: relative; }
         #map { width: 100%; height: 100%; background: #1A1D24; }
-        
         .leaflet-popup-content-wrapper {
-            background: var(--bg-panel) !important;
-            color: var(--text-main) !important;
+            background: var(--bg-panel) !important; color: var(--text-main) !important;
             border: 1px solid var(--border-color);
         }
         .leaflet-popup-tip { background: var(--bg-panel) !important; }
@@ -129,15 +110,15 @@
 <div id="app-container">
     <div id="report-panel">
         <div class="header-section">
-            <h2>📊 BÁO CÁO COVERAGE PHÂN CẤP THỊ TRƯỜNG</h2>
+            <h2>📊 BÁO CÁO COVERAGE - CẤP QUẬN HUYỆN</h2>
             
             <div class="filter-group">
                 <div class="filter-item">
-                    <label>Khu vực (Area từ Excel)</label>
+                    <label>Khu vực (Area)</label>
                     <select id="sel-area" onchange="filterData()"><option value="">-- Tất cả Area --</option></select>
                 </div>
                 <div class="filter-item">
-                    <label>Tỉnh Thành (COUNTRY từ JSON)</label>
+                    <label>Tỉnh Thành</label>
                     <select id="sel-province" onchange="filterData()"><option value="">-- Tất cả Tỉnh --</option></select>
                 </div>
                 <button id="btnRun" class="btn-primary" onclick="initLoadAndProcess()">🔄 Nạp Dữ Liệu</button>
@@ -150,9 +131,9 @@
                     <tr>
                         <th>Area</th>
                         <th>Tỉnh / Thành Phố</th>
-                        <th>Quận / Huyện</th>
+                        <th>Quận / Huyện <span style="font-size: 10px; font-weight:normal;">(Click để xem Phường)</span></th>
                         <th>Phường / Xã</th>
-                        <th class="num-right">Khách Trên Tuyến Mới Nhất</th>
+                        <th class="num-right">Khách Trên Tuyến</th>
                         <th class="num-right">Khách Lên Đơn</th>
                         <th class="num-right">Doanh Số</th>
                     </tr>
@@ -160,7 +141,7 @@
                 <tbody id="summary-body">
                     <tr>
                         <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
-                            Nhấn nút "Nạp Dữ Liệu" để lấy thông tin và đồng bộ doanh số từ hệ thống.
+                            Nhấn nút "Nạp Dữ Liệu" để lấy thông tin.
                         </td>
                     </tr>
                 </tbody>
@@ -178,7 +159,6 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const BUCKET_NAME = 'mappingdata';
-    
     const FILE_ROUTE = 'tuyen.xlsx'; 
     const GEOJSON_FILE = 'gadm41_VNM_3.json'; 
 
@@ -186,8 +166,11 @@
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-    let masterGeoJSON = null; 
-    let allProcessedRows = []; 
+    // Tách riêng 2 mảng để tối ưu: Phường dùng để quét tọa độ, Huyện dùng để vẽ bản đồ
+    let wardFeatures = []; 
+    let districtFeatures = []; 
+    
+    let allProcessedDistricts = []; // Dữ liệu gom nhóm cấp Huyện
     let geoJsonLayer = null;
 
     async function initLoadAndProcess() {
@@ -197,40 +180,36 @@
         
         setTimeout(async () => {
             try {
-                if (!masterGeoJSON) {
+                // 1. Nạp và bóc tách không gian (Chỉ làm 1 lần)
+                if (wardFeatures.length === 0) {
                     const { data: geoUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([GEOJSON_FILE], 60);
                     let resGeo = await fetch(geoUrl[0].signedUrl);
-                    masterGeoJSON = await resGeo.json();
+                    let masterGeoJSON = await resGeo.json();
                     
                     masterGeoJSON.features.forEach(f => {
                         let p = f.properties;
                         f._bbox = turf.bbox(f); 
 
-                        if (p.name && p.name.startsWith("VNM")) {
+                        // TÁCH LỚP: Phường/Xã đẩy vào mảng quét tọa độ, Quận/Huyện đẩy vào mảng vẽ Map
+                        if (p.name && p.name.startsWith("VNM") || (p.NAME_2 && p.NAME_2 !== "NA")) {
                             f.properties._level = "phuong_xa";
-                            f.properties._province = p.COUNTRY;
-                            f.properties._district = p.NAME_1;
-                            f.properties._ward = p.NAME_2;
+                            wardFeatures.push(f);
                         } else if (p.NAME_2 === "NA") {
                             f.properties._level = "quan_huyen";
-                            f.properties._province = p.COUNTRY;
-                            f.properties._district = p.NAME_1;
-                            f.properties._ward = ""; 
-                        } else {
-                            f.properties._level = "khac";
+                            districtFeatures.push(f);
                         }
                     });
 
                     populateProvinceFilter();
                 }
 
+                // 2. Nạp file Excel Khách hàng
                 const { data: excelUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([FILE_ROUTE], 60);
                 let resExcel = await fetch(excelUrl[0].signedUrl);
                 let arrBuffer = await resExcel.arrayBuffer();
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                // Đã đổi lại gọi đúng tên hàm xử lý dữ liệu
                 processExcelData(sheetData);
 
             } catch (error) {
@@ -244,7 +223,7 @@
     }
 
     function populateProvinceFilter() {
-        let provinces = [...new Set(masterGeoJSON.features.map(f => f.properties._province))].filter(Boolean).sort();
+        let provinces = [...new Set(districtFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
@@ -253,7 +232,6 @@
     function getCustomerSalesSummary(cusCode) {
         let totalSales = 0;
         let isOrdered = false;
-
         let targetArray = window.dbSalesM7 || window.dbSalesM6 || window.dbSalesM5 || [];
         
         if (Array.isArray(targetArray)) {
@@ -271,12 +249,6 @@
         let areaSet = new Set();
         let records = [];
 
-        masterGeoJSON.features.forEach(f => {
-            f.properties._distinctCusOnRoute = new Set();
-            f.properties._distinctCusOrdered = new Set();
-            f.properties._revenue = 0;
-        });
-
         sheetData.forEach((row, idx) => {
             if (idx === 0 || !row[5]) return; 
             
@@ -288,49 +260,38 @@
             if (area) areaSet.add(area);
 
             let salesSummary = getCustomerSalesSummary(ma_kh);
-            let matchedRegion = null;
+            let matchedWard = null;
 
+            // BẪY TỌA ĐỘ: Chỉ quét duy nhất trên mảng Phường/Xã (wardFeatures)
             if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                 let pt = turf.point([lng, lat]);
 
-                for (let f of masterGeoJSON.features) {
+                for (let f of wardFeatures) {
                     const bbox = f._bbox;
                     if (lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
                         if (turf.booleanPointInPolygon(pt, f)) {
-                            matchedRegion = f.properties;
-                            
-                            if (f.properties._level === "quan_huyen") {
-                                f.properties._distinctCusOnRoute.add(ma_kh);
-                                if (salesSummary.isOrdered) {
-                                    f.properties._distinctCusOrdered.add(ma_kh);
-                                    f.properties._revenue += salesSummary.sales;
-                                }
-                            }
+                            matchedWard = f.properties;
                             break; 
                         }
                     }
                 }
             }
 
-            if (matchedRegion) {
+            if (matchedWard) {
                 records.push({
                     cusCode: ma_kh,
                     area: area,
-                    province: matchedRegion._province,
-                    district: matchedRegion._district,
-                    ward: matchedRegion._ward || "-",
+                    province: matchedWard.COUNTRY,    // TRUY NGƯỢC RA TỈNH
+                    district: matchedWard.NAME_1,     // TRUY NGƯỢC RA HUYỆN
+                    ward: matchedWard.NAME_2,         // TRUY NGƯỢC RA PHƯỜNG
                     sales: salesSummary.sales,
                     isOrdered: salesSummary.isOrdered
                 });
             } else {
                 records.push({
-                    cusCode: ma_kh,
-                    area: area,
-                    province: "Chưa rõ",
-                    district: "Chưa rõ",
-                    ward: "Chưa rõ",
-                    sales: salesSummary.sales,
-                    isOrdered: salesSummary.isOrdered
+                    cusCode: ma_kh, area: area,
+                    province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ",
+                    sales: salesSummary.sales, isOrdered: salesSummary.isOrdered
                 });
             }
         });
@@ -339,54 +300,69 @@
         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
         [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
 
-        allProcessedRows = aggregateReportRows(records);
+        // Gom nhóm dữ liệu theo Phân Cấp (Hierarchical Aggregation)
+        allProcessedDistricts = aggregateHierarchicalRows(records);
         filterData();
     }
 
-    function aggregateReportRows(records) {
-        let groups = {};
+    // GOM NHÓM DỮ LIỆU: Quận/Huyện là cha, Phường/Xã là con
+    function aggregateHierarchicalRows(records) {
+        let districtGroups = {};
         
         records.forEach(r => {
-            let key = `${r.area}|${r.province}|${r.district}|${r.ward}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    area: r.area,
-                    province: r.province,
-                    district: r.district,
-                    ward: r.ward,
-                    cusOnRouteSet: new Set(),
-                    cusOrderedSet: new Set(),
-                    revenue: 0
+            let distKey = `${r.area}|${r.province}|${r.district}`;
+            
+            // 1. Tạo node cha (Quận/Huyện)
+            if (!districtGroups[distKey]) {
+                districtGroups[distKey] = {
+                    area: r.area, province: r.province, district: r.district,
+                    cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
+                    wards: {} // Chứa danh sách các phường con
                 };
             }
-            groups[key].cusOnRouteSet.add(r.cusCode);
-            if (r.isOrdered) {
-                groups[key].cusOrderedSet.add(r.cusCode);
+            
+            // 2. Tạo node con (Phường/Xã)
+            let wardKey = r.ward;
+            if (!districtGroups[distKey].wards[wardKey]) {
+                districtGroups[distKey].wards[wardKey] = {
+                    wardName: r.ward,
+                    cusOnRouteSet: new Set(), cusOrderedSet: new Set()
+                };
             }
-            // Mảng giao dịch đã được sum ở hàm getCustomerSalesSummary nên chỉ cần gán đại diện 1 lần cho mỗi khách
-            // Tuy nhiên vì 1 mã KH có thể lọt vào nhiều lần nếu file tuyến bị duplicate dòng, 
-            // ta cần check xem đã cộng doanh số của khách này vào nhóm chưa để tránh bị x2
-            if (!groups[key].cusOnRouteSet.has(r.cusCode) || Array.from(groups[key].cusOnRouteSet).indexOf(r.cusCode) === -1) {
-                // Dummy check vì .add() phía trên đã chèn vào Set rồi.
-            }
+
+            // Đổ dữ liệu vào Quận/Huyện
+            districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
+            if (r.isOrdered) districtGroups[distKey].cusOrderedSet.add(r.cusCode);
+
+            // Đổ dữ liệu vào Phường/Xã chi tiết
+            districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
+            if (r.isOrdered) districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
         });
 
-        // Tính lại doanh thu chính xác: chỉ cộng theo Unique Khách Hàng (tránh duplicate file Excel làm nhân đôi doanh thu)
-        return Object.values(groups).map(g => {
-            let totalGroupRev = 0;
-            g.cusOrderedSet.forEach(cus => {
-                let s = getCustomerSalesSummary(cus);
-                totalGroupRev += s.sales;
-            });
+        // Tính tổng doanh thu bằng cách duyệt Set Unique
+        return Object.values(districtGroups).map(d => {
+            // Tính tổng doanh số Cấp Quận
+            let distRev = 0;
+            d.cusOrderedSet.forEach(cus => distRev += getCustomerSalesSummary(cus).sales);
+            
+            // Tính tổng doanh số Cấp Phường
+            let wardArr = Object.values(d.wards).map(w => {
+                let wRev = 0;
+                w.cusOrderedSet.forEach(cus => wRev += getCustomerSalesSummary(cus).sales);
+                return {
+                    wardName: w.wardName,
+                    onRoute: w.cusOnRouteSet.size,
+                    ordered: w.cusOrderedSet.size,
+                    revenue: wRev
+                }
+            }).sort((a,b) => b.revenue - a.revenue);
 
             return {
-                area: g.area,
-                province: g.province,
-                district: g.district,
-                ward: g.ward,
-                onRoute: g.cusOnRouteSet.size,
-                ordered: g.cusOrderedSet.size,
-                revenue: totalGroupRev
+                area: d.area, province: d.province, district: d.district,
+                onRoute: d.cusOnRouteSet.size,
+                ordered: d.cusOrderedSet.size,
+                revenue: distRev,
+                wardsData: wardArr // Gắn mảng phường con vào Quận cha
             };
         });
     }
@@ -395,20 +371,42 @@
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        let displayTableData = allProcessedRows.filter(r => {
+        // Lọc dữ liệu Quận/Huyện đưa lên bảng
+        let displayTableData = allProcessedDistricts.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
             return true;
         });
         renderTableRows(displayTableData);
 
-        let mapFeatures = masterGeoJSON.features.filter(f => {
+        // Map doanh số từ mảng dữ liệu vào layer districtFeatures để vẽ bản đồ
+        let mapFeatures = districtFeatures.filter(f => {
             let p = f.properties;
-            if (p._level !== "quan_huyen") return false; 
-            if (selectedProvince && p._province !== selectedProvince) return false;
+            if (selectedProvince && p.COUNTRY !== selectedProvince) return false;
+            
+            // Tra cứu doanh thu từ kết quả xử lý
+            let matchData = allProcessedDistricts.find(d => d.province === p.COUNTRY && d.district === p.NAME_1);
+            p._mapOnRoute = matchData ? matchData.onRoute : 0;
+            p._mapOrdered = matchData ? matchData.ordered : 0;
+            p._mapRevenue = matchData ? matchData.revenue : 0;
+            
             return true;
         });
+
         renderMapLayer(mapFeatures);
+    }
+
+    // SỰ KIỆN GIAO DIỆN: Click mở/đóng danh sách Phường Xã
+    function toggleWards(districtId) {
+        let wardRows = document.querySelectorAll(`.ward-row-${districtId}`);
+        let icon = document.getElementById(`icon-${districtId}`);
+        let isExpanding = icon.innerText === '[+]';
+        
+        icon.innerText = isExpanding ? '[-]' : '[+]';
+        wardRows.forEach(row => {
+            if (isExpanding) row.classList.add('show');
+            else row.classList.remove('show');
+        });
     }
 
     function renderTableRows(rowsData) {
@@ -422,18 +420,38 @@
 
         rowsData.sort((a, b) => b.revenue - a.revenue);
 
-        rowsData.forEach(p => {
+        rowsData.forEach((p, index) => {
+            let distId = `dist_${index}`; // ID giả để nhóm Quận Huyện và Phường Xã
+
+            // Render dòng Quận Huyện (Cha)
             tbody.innerHTML += `
-                <tr>
+                <tr class="district-row" onclick="toggleWards('${distId}')">
                     <td style="color: var(--color-light-1);">${p.area}</td>
                     <td>${p.province}</td>
-                    <td style="font-weight: bold; color: var(--color-light-2);">${p.district}</td>
-                    <td class="text-orange">${p.ward}</td>
+                    <td style="font-weight: bold; color: var(--color-light-2);">
+                        <span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}
+                    </td>
+                    <td>-- Tổng Hợp --</td>
                     <td class="num-right">${p.onRoute.toLocaleString()}</td>
                     <td class="num-right text-orange">${p.ordered.toLocaleString()}</td>
                     <td class="num-right text-green">${p.revenue.toLocaleString()} đ</td>
                 </tr>
             `;
+
+            // Render các dòng Phường Xã (Con - Mặc định bị ẩn)
+            p.wardsData.forEach(w => {
+                tbody.innerHTML += `
+                    <tr class="ward-row ward-row-${distId}">
+                        <td></td>
+                        <td></td>
+                        <td style="text-align: right; color:#6B7280;">↳</td>
+                        <td style="color: var(--color-light-2);">${w.wardName}</td>
+                        <td class="num-right" style="color: #9CA3AF;">${w.onRoute.toLocaleString()}</td>
+                        <td class="num-right" style="color: #D3885D;">${w.ordered.toLocaleString()}</td>
+                        <td class="num-right" style="color: #10B981;">${w.revenue.toLocaleString()} đ</td>
+                    </tr>
+                `;
+            });
         });
     }
 
@@ -448,12 +466,13 @@
     function renderMapLayer(featuresList) {
         if (geoJsonLayer) { map.removeLayer(geoJsonLayer); }
 
+        // Lọc bỏ những quận không có doanh thu để bản đồ thoáng hơn (Tùy chọn)
         let displayCollection = turf.featureCollection(featuresList);
 
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (feature) {
                 return {
-                    fillColor: mapColorScale(feature.properties._revenue),
+                    fillColor: mapColorScale(feature.properties._mapRevenue),
                     weight: 1.5,
                     opacity: 1,
                     color: 'var(--border-color)',
@@ -464,12 +483,12 @@
                 let p = feature.properties;
                 layer.bindPopup(`
                     <div style="font-size:12px; line-height: 1.6;">
-                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p._district}</b><br>
-                        Tỉnh: <b>${p._province}</b><br>
+                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NAME_1}</b><br>
+                        Tỉnh: <b>${p.COUNTRY}</b><br>
                         <hr style="border-color:#4b5563; margin:5px 0;">
-                        Khách trên tuyến: <b>${p._distinctCusOnRoute ? p._distinctCusOnRoute.size : 0}</b><br>
-                        Khách lên đơn: <b>${p._distinctCusOrdered ? p._distinctCusOrdered.size : 0}</b><br>
-                        Doanh số vùng: <b style="color:#10B981;">${p._revenue.toLocaleString()} đ</b>
+                        Khách trên tuyến: <b>${p._mapOnRoute}</b><br>
+                        Khách lên đơn: <b>${p._mapOrdered}</b><br>
+                        Doanh số vùng: <b style="color:#10B981;">${p._mapRevenue.toLocaleString()} đ</b>
                     </div>
                 `);
             }
