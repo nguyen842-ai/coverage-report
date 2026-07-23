@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - Tách Tháng & Drilldown</title>
+    <title>Báo Cáo Coverage - Map Drilldown Tối Ưu</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -101,6 +101,12 @@
             border: 1px solid var(--border-color);
         }
         .leaflet-popup-tip { background: var(--bg-panel) !important; }
+        
+        #map-loader {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: rgba(0,0,0,0.7); color: #fff; padding: 5px 10px;
+            border-radius: 4px; font-size: 11px; display: none;
+        }
     </style>
 </head>
 <body>
@@ -113,7 +119,7 @@
             <div class="filter-group">
                 <div class="filter-item">
                     <label>Chọn Tháng Doanh Số</label>
-                    <select id="sel-month" onchange="filterData()">
+                    <select id="sel-month" onchange="runFilter()">
                         <option value="M7" selected>Tháng 7 (M7)</option>
                         <option value="M6">Tháng 6 (M6)</option>
                         <option value="M5">Tháng 5 (M5)</option>
@@ -121,11 +127,11 @@
                 </div>
                 <div class="filter-item">
                     <label>Khu vực (Area)</label>
-                    <select id="sel-area" onchange="filterData()"><option value="">-- Tất cả Area --</option></select>
+                    <select id="sel-area" onchange="runFilter()"><option value="">-- Tất cả Area --</option></select>
                 </div>
                 <div class="filter-item">
                     <label>Tỉnh Thành</label>
-                    <select id="sel-province" onchange="filterData()"><option value="">-- Tất cả Tỉnh --</option></select>
+                    <select id="sel-province" onchange="runFilter()"><option value="">-- Tất cả Tỉnh --</option></select>
                 </div>
                 <button id="btnRun" class="btn-primary" onclick="initLoadAndProcess()">🔄 Nạp Dữ Liệu</button>
             </div>
@@ -147,7 +153,7 @@
                 <tbody id="summary-body">
                     <tr>
                         <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
-                            Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Map.
+                            Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Bản đồ.
                         </td>
                     </tr>
                 </tbody>
@@ -156,6 +162,7 @@
     </div>
 
     <div id="map-panel">
+        <div id="map-loader">⌛ Đang tải bản đồ...</div>
         <div id="map"></div>
     </div>
 </div>
@@ -169,15 +176,26 @@
     const DATA_BUCKET = 'data';
     
     const FILE_ROUTE = 'tuyen.xlsx'; 
-    const GEOJSON_FILE = 'gadm41_VNM_3.json'; 
+    const GEOJSON_SCAN = 'gadm41_VNM_3.json'; // Dùng ẩn để bẫy tọa độ
+    const GEOJSON_PROV = 'gadm41_VNM_1.json'; // Bản đồ Tỉnh
+    const GEOJSON_DIST = 'gadm41_VNM_2.json'; // Bản đồ Huyện
 
-    const map = L.map('map', { zoomControl: false }).setView([10.8231, 106.6297], 6);
+    const map = L.map('map', { zoomControl: false }).setView([16.0, 106.0], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let wardFeatures = []; 
+    let provinceGeoData = null; // Cache bản đồ Tỉnh
+    let districtGeoData = null; // Cache bản đồ Huyện
     let geoJsonLayer = null;
     let rawCustomerRecords = []; 
+
+    async function fetchSupabaseGeoJSON(fileName) {
+        const { data: urlData, error } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
+        if (error || !urlData || !urlData[0]) throw new Error(`Không tìm thấy file ${fileName}`);
+        let res = await fetch(urlData[0].signedUrl);
+        return await res.json();
+    }
 
     async function initLoadAndProcess() {
         const btn = document.getElementById('btnRun');
@@ -192,29 +210,23 @@
             if (salesUrls) {
                 for (let item of salesUrls) {
                     if (item.signedUrl) {
-                        let response = await fetch(item.signedUrl);
-                        let scriptText = await response.text();
+                        let res = await fetch(item.signedUrl);
                         let scriptTag = document.createElement('script');
-                        scriptTag.text = scriptText;
+                        scriptTag.text = await res.text();
                         document.head.appendChild(scriptTag);
                     }
                 }
             }
 
-            // 2. FETCH BẢN ĐỒ
+            // 2. FETCH MAP 3 (Chỉ để quét tọa độ, không vẽ)
             if (wardFeatures.length === 0) {
-                btn.innerHTML = "⌛ Đang tải Map...";
-                const { data: geoUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([GEOJSON_FILE], 60);
-                if (geoUrl && geoUrl[0]) {
-                    let resGeo = await fetch(geoUrl[0].signedUrl);
-                    let masterGeoJSON = await resGeo.json();
-                    
-                    masterGeoJSON.features.forEach(f => {
-                        f._bbox = turf.bbox(f); 
-                        wardFeatures.push(f);
-                    });
-                    populateProvinceFilter();
-                }
+                btn.innerHTML = "⌛ Đang thiết lập bẫy tọa độ...";
+                let masterGeoJSON = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
+                masterGeoJSON.features.forEach(f => {
+                    f._bbox = turf.bbox(f); 
+                    wardFeatures.push(f);
+                });
+                populateProvinceFilter();
             }
 
             // 3. FETCH EXCEL
@@ -226,12 +238,8 @@
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                // GỌI HÀM XỬ LÝ KHÔNG GIAN BẤT ĐỒNG BỘ (CHỐNG TREO MÁY)
-                await buildRawCustomerRecordsAsync(sheetData, (progressMsg) => {
-                    btn.innerHTML = progressMsg; 
-                });
-
-                filterData();
+                await buildRawCustomerRecordsAsync(sheetData, (progressMsg) => { btn.innerHTML = progressMsg; });
+                runFilter(); // Gọi filter để tự động lấy và vẽ bản đồ Tỉnh
             }
 
         } catch (error) {
@@ -244,13 +252,13 @@
     }
 
     function populateProvinceFilter() {
+        // Dùng chuẩn file VNM_3 của bạn: Tỉnh lưu ở COUNTRY
         let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    // THUẬT TOÁN CHIA NHỎ DỮ LIỆU ĐỂ XỬ LÝ (CHỐNG TREO TRÌNH DUYỆT)
     function buildRawCustomerRecordsAsync(sheetData, updateProgressFn) {
         return new Promise((resolve) => {
             let areaSet = new Set();
@@ -290,8 +298,7 @@
 
                     if (matchedWard) {
                         rawCustomerRecords.push({
-                            cusCode: ma_kh,
-                            area: area,
+                            cusCode: ma_kh, area: area,
                             province: matchedWard.COUNTRY || "Chưa rõ", 
                             district: matchedWard.NL_NAME_1 || "Chưa rõ",
                             ward: matchedWard.NAME_2 || "Chưa rõ"
@@ -305,8 +312,7 @@
                 }
 
                 if (index < total) {
-                    let percent = Math.round((index / total) * 100);
-                    updateProgressFn(`⌛ Đang phân tích: ${percent}%`);
+                    updateProgressFn(`⌛ Đang phân tích: ${Math.round((index / total) * 100)}%`);
                     setTimeout(processNextChunk, 0); 
                 } else {
                     const selArea = document.getElementById('sel-area');
@@ -315,7 +321,6 @@
                     resolve();
                 }
             }
-            
             processNextChunk();
         });
     }
@@ -328,18 +333,14 @@
             if (selectedMonth === 'M7' && typeof dbSalesM7 !== 'undefined') targetArray = dbSalesM7;
             else if (selectedMonth === 'M6' && typeof dbSalesM6 !== 'undefined') targetArray = dbSalesM6;
             else if (selectedMonth === 'M5' && typeof dbSalesM5 !== 'undefined') targetArray = dbSalesM5;
-        } catch (e) {
-            console.warn("Đang chờ nạp mảng doanh số...");
-        }
+        } catch (e) { }
 
-        let salesDictionary = {};
+        let salesDict = {};
         if (Array.isArray(targetArray) && targetArray.length > 0) {
             targetArray.forEach(line => {
                 if (line && line.cusCode) {
                     let cleanDbCode = parseInt(line.cusCode, 10);
-                    if (!isNaN(cleanDbCode)) {
-                        salesDictionary[cleanDbCode] = (salesDictionary[cleanDbCode] || 0) + (parseFloat(line.sales) || 0);
-                    }
+                    if (!isNaN(cleanDbCode)) salesDict[cleanDbCode] = (salesDict[cleanDbCode] || 0) + (parseFloat(line.sales) || 0);
                 }
             });
         }
@@ -352,34 +353,26 @@
             if (!districtGroups[distKey]) {
                 districtGroups[distKey] = {
                     area: r.area, province: r.province, district: r.district,
-                    cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
-                    revenue: 0,
-                    wards: {} 
+                    cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0, wards: {} 
                 };
             }
             
             let wardKey = r.ward;
             if (!districtGroups[distKey].wards[wardKey]) {
-                districtGroups[distKey].wards[wardKey] = {
-                    wardName: r.ward,
-                    cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
-                    revenue: 0
-                };
+                districtGroups[distKey].wards[wardKey] = { wardName: r.ward, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0 };
             }
 
             districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
             districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
 
             let cleanCusCode = parseInt(r.cusCode, 10);
-            let cusSales = salesDictionary[cleanCusCode] || 0;
-            let isOrdered = cusSales > 0;
+            let cusSales = salesDict[cleanCusCode] || 0;
 
-            if (isOrdered) {
+            if (cusSales > 0) {
                 if (!districtGroups[distKey].cusOrderedSet.has(r.cusCode)) {
                     districtGroups[distKey].cusOrderedSet.add(r.cusCode);
                     districtGroups[distKey].revenue += cusSales;
                 }
-                
                 if (!districtGroups[distKey].wards[wardKey].cusOrderedSet.has(r.cusCode)) {
                     districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
                     districtGroups[distKey].wards[wardKey].revenue += cusSales;
@@ -388,26 +381,19 @@
         });
 
         return Object.values(districtGroups).map(d => {
-            let wardArr = Object.values(d.wards).map(w => {
-                return {
-                    wardName: w.wardName,
-                    onRoute: w.cusOnRouteSet.size,
-                    ordered: w.cusOrderedSet.size,
-                    revenue: w.revenue
-                }
-            }).sort((a,b) => b.revenue - a.revenue);
+            let wardArr = Object.values(d.wards).map(w => ({
+                wardName: w.wardName, onRoute: w.cusOnRouteSet.size, ordered: w.cusOrderedSet.size, revenue: w.revenue
+            })).sort((a,b) => b.revenue - a.revenue);
 
             return {
                 area: d.area, province: d.province, district: d.district,
-                onRoute: d.cusOnRouteSet.size,
-                ordered: d.cusOrderedSet.size,
-                revenue: d.revenue,
-                wardsData: wardArr 
+                onRoute: d.cusOnRouteSet.size, ordered: d.cusOrderedSet.size, revenue: d.revenue, wardsData: wardArr 
             };
         });
     }
 
-    function filterData() {
+    // HÀM CHẠY LỌC BẤT ĐỒNG BỘ ĐỂ TẢI BẢN ĐỒ CHUYÊN BIỆT
+    async function runFilter() {
         if (rawCustomerRecords.length === 0) return; 
 
         let aggregatedData = processSalesDataAndAggregate();
@@ -415,6 +401,7 @@
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
+        // 1. CẬP NHẬT BẢNG (Giữ nguyên cấu trúc)
         let displayTableData = aggregatedData.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
@@ -422,31 +409,74 @@
         });
         renderTableRows(displayTableData);
 
-        let mapFeatures = wardFeatures.filter(f => {
-            let p = f.properties;
-            if (selectedProvince && p.COUNTRY !== selectedProvince) return false;
-            
-            let matchData = aggregatedData.find(d => d.province === p.COUNTRY && d.district === p.NL_NAME_1);
-            p._mapOnRoute = matchData ? matchData.onRoute : 0;
-            p._mapOrdered = matchData ? matchData.ordered : 0;
-            p._mapRevenue = matchData ? matchData.revenue : 0;
-            
-            return true;
-        });
+        // 2. VẼ MAP LAZY LOADING
+        document.getElementById('map-loader').style.display = 'block';
 
-        renderMapLayer(mapFeatures);
+        try {
+            if (!selectedProvince) {
+                // CHẾ ĐỘ 1: VẼ CẤP TỈNH (Khi không lọc Tỉnh)
+                if (!provinceGeoData) provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
+
+                // Gom nhóm doanh số từ cấp Huyện lên cấp Tỉnh
+                let provAgg = {};
+                displayTableData.forEach(d => {
+                    if (!provAgg[d.province]) provAgg[d.province] = { onRoute: 0, ordered: 0, revenue: 0 };
+                    provAgg[d.province].onRoute += d.onRoute;
+                    provAgg[d.province].ordered += d.ordered;
+                    provAgg[d.province].revenue += d.revenue;
+                });
+
+                let mapFeatures = provinceGeoData.features.map(f => {
+                    let p = f.properties;
+                    // CHÚ Ý: Cột chứa Tên Tỉnh trong file VNM_1 của bạn. (Mặc định GADM là NAME_1)
+                    let provName = p.NAME_1 || p.COUNTRY; 
+                    
+                    let match = provAgg[provName];
+                    p._mapOnRoute = match ? match.onRoute : 0;
+                    p._mapOrdered = match ? match.ordered : 0;
+                    p._mapRevenue = match ? match.revenue : 0;
+                    p._mapLabel = `Tỉnh/TP: ${provName}`;
+                    return f;
+                }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true);
+
+                renderMapLayer(mapFeatures);
+
+            } else {
+                // CHẾ ĐỘ 2: VẼ CẤP HUYỆN (Chỉ nhặt đúng huyện của Tỉnh đang chọn)
+                if (!districtGeoData) districtGeoData = await fetchSupabaseGeoJSON(GEOJSON_DIST);
+
+                let mapFeatures = districtGeoData.features.filter(f => {
+                    let p = f.properties;
+                    // CHÚ Ý: Cột chứa Tên Tỉnh và Huyện trong file VNM_2. 
+                    let provName = p.NAME_1 || p.COUNTRY;
+                    let distName = p.NAME_2 || p.NL_NAME_1;
+
+                    if (provName !== selectedProvince) return false;
+                    
+                    let matchData = displayTableData.find(d => d.district === distName);
+                    p._mapOnRoute = matchData ? matchData.onRoute : 0;
+                    p._mapOrdered = matchData ? matchData.ordered : 0;
+                    p._mapRevenue = matchData ? matchData.revenue : 0;
+                    p._mapLabel = `Quận/Huyện: ${distName}<br>Tỉnh: ${provName}`;
+                    
+                    return true;
+                });
+
+                renderMapLayer(mapFeatures);
+            }
+        } catch (err) {
+            console.error("Lỗi vẽ bản đồ:", err);
+        } finally {
+            document.getElementById('map-loader').style.display = 'none';
+        }
     }
 
     function toggleWards(districtId) {
         let wardRows = document.querySelectorAll(`.ward-row-${districtId}`);
         let icon = document.getElementById(`icon-${districtId}`);
         let isExpanding = icon.innerText === '[+]';
-        
         icon.innerText = isExpanding ? '[-]' : '[+]';
-        wardRows.forEach(row => {
-            if (isExpanding) row.classList.add('show');
-            else row.classList.remove('show');
-        });
+        wardRows.forEach(row => isExpanding ? row.classList.add('show') : row.classList.remove('show'));
     }
 
     function renderTableRows(rowsData) {
@@ -462,14 +492,11 @@
 
         rowsData.forEach((p, index) => {
             let distId = `dist_${index}`; 
-
             tbody.innerHTML += `
                 <tr class="district-row" onclick="toggleWards('${distId}')">
                     <td style="color: var(--color-light-1);">${p.area}</td>
                     <td>${p.province}</td>
-                    <td style="font-weight: bold; color: var(--color-light-2);">
-                        <span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}
-                    </td>
+                    <td style="font-weight: bold; color: var(--color-light-2);"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td>
                     <td>-- Tổng Hợp --</td>
                     <td class="num-right">${p.onRoute.toLocaleString()}</td>
                     <td class="num-right text-orange">${p.ordered.toLocaleString()}</td>
@@ -480,9 +507,7 @@
             p.wardsData.forEach(w => {
                 tbody.innerHTML += `
                     <tr class="ward-row ward-row-${distId}">
-                        <td></td>
-                        <td></td>
-                        <td style="text-align: right; color:#6B7280;">↳</td>
+                        <td></td><td></td><td style="text-align: right; color:#6B7280;">↳</td>
                         <td style="color: var(--color-light-2);">${w.wardName}</td>
                         <td class="num-right" style="color: #9CA3AF;">${w.onRoute.toLocaleString()}</td>
                         <td class="num-right" style="color: #D3885D;">${w.ordered.toLocaleString()}</td>
@@ -494,34 +519,22 @@
     }
 
     function mapColorScale(revenue) {
-        return revenue > 50000000 ? '#7D3F20' : 
-               revenue > 20000000 ? '#A86134' : 
-               revenue > 5000000  ? '#D3885D' : 
-               revenue > 0        ? '#E8B892' : 
-                                    'transparent';
+        return revenue > 50000000 ? '#7D3F20' : revenue > 20000000 ? '#A86134' : revenue > 5000000  ? '#D3885D' : revenue > 0 ? '#E8B892' : 'transparent';
     }
 
     function renderMapLayer(featuresList) {
-        if (geoJsonLayer) { map.removeLayer(geoJsonLayer); }
-
+        if (geoJsonLayer) map.removeLayer(geoJsonLayer); 
         let displayCollection = turf.featureCollection(featuresList);
 
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (feature) {
-                return {
-                    fillColor: mapColorScale(feature.properties._mapRevenue),
-                    weight: 1.5,
-                    opacity: 1,
-                    color: 'var(--border-color)',
-                    fillOpacity: 0.75
-                };
+                return { fillColor: mapColorScale(feature.properties._mapRevenue), weight: 1.5, opacity: 1, color: 'var(--border-color)', fillOpacity: 0.75 };
             },
             onEachFeature: function (feature, layer) {
                 let p = feature.properties;
                 layer.bindPopup(`
                     <div style="font-size:12px; line-height: 1.6;">
-                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NL_NAME_1}</b><br>
-                        Tỉnh: <b>${p.COUNTRY}</b><br>
+                        <b style="color:var(--color-light-1); font-size:14px;">${p._mapLabel}</b><br>
                         <hr style="border-color:#4b5563; margin:5px 0;">
                         Khách trên tuyến: <b>${p._mapOnRoute}</b><br>
                         Khách lên đơn: <b>${p._mapOrdered}</b><br>
