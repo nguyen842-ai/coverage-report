@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - Map Drilldown Tối Ưu</title>
+    <title>Báo Cáo Coverage - Heatmap Tối Ưu (Light Mode)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -13,22 +13,20 @@
 
     <style>
         :root {
-            --bg-dark: #1E2227;
-            --bg-panel: #282C34;
-            --color-primary: #7D3F20;
-            --color-secondary: #A86134;
-            --color-accent: #D3885D;
-            --color-light-1: #E8B892;
-            --color-light-2: #F9E3C9;
-            --text-main: #E2E8F0;
-            --text-muted: #9CA3AF;
-            --border-color: #3F4451;
+            /* TONE SÁNG HIỆN ĐẠI */
+            --bg-main: #F3F6F9;
+            --bg-panel: #FFFFFF;
+            --color-primary: #ea580c;    /* Cam đậm làm điểm nhấn */
+            --color-secondary: #f97316;  /* Cam sáng */
+            --text-main: #1e293b;        /* Xám đen đậm (dễ đọc) */
+            --text-muted: #64748b;
+            --border-color: #cbd5e1;
         }
 
         body, html { 
             margin: 0; padding: 0; height: 100%; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background-color: var(--bg-dark); 
+            background-color: var(--bg-main); 
             color: var(--text-main);
             font-size: 13px;
             overflow: hidden;
@@ -40,72 +38,79 @@
             width: 70%; height: 100%; 
             display: flex; flex-direction: column; 
             padding: 20px; box-sizing: border-box;
+            background: var(--bg-main);
         }
 
         .header-section {
             display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 15px; border-bottom: 1px solid var(--border-color);
+            margin-bottom: 15px; border-bottom: 2px solid var(--border-color);
             padding-bottom: 15px; flex-wrap: wrap; gap: 15px;
         }
 
-        .header-section h2 { margin: 0; color: var(--color-light-1); font-size: 18px; }
+        .header-section h2 { margin: 0; color: var(--color-primary); font-size: 18px; font-weight: 800; }
 
         .filter-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .filter-item { display: flex; flex-direction: column; gap: 4px; }
-        .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; }
+        .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; }
         select {
             background: var(--bg-panel); color: var(--text-main);
             border: 1px solid var(--border-color); padding: 8px 12px;
             border-radius: 6px; outline: none; font-size: 13px; min-width: 120px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
 
         .btn-primary { 
-            padding: 10px 16px; background-color: var(--color-secondary); 
-            color: var(--color-light-2); border: none; border-radius: 6px; 
+            padding: 10px 16px; background-color: var(--color-primary); 
+            color: #ffffff; border: none; border-radius: 6px; 
             font-weight: bold; cursor: pointer; transition: background 0.3s;
             height: 36px; margin-top: 15px;
-            min-width: 150px;
+            min-width: 150px; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3);
         }
-        .btn-primary:hover:not(:disabled) { background-color: var(--color-primary); }
-        .btn-primary:disabled { background-color: #4B5563; color: var(--text-muted); cursor: not-allowed; }
+        .btn-primary:hover:not(:disabled) { background-color: #c2410c; }
+        .btn-primary:disabled { background-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
 
         #table-container { 
             flex-grow: 1; overflow-y: auto; background: var(--bg-panel);
             border-radius: 8px; border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
 
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th, td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
         
         th { 
-            background-color: var(--color-primary); color: var(--color-light-2); 
+            background-color: var(--text-main); color: #ffffff; 
             position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase;
         }
 
-        .district-row { cursor: pointer; transition: background 0.2s; }
-        .district-row:hover { background-color: rgba(255, 255, 255, 0.05); }
-        .district-row .toggle-icon { display: inline-block; width: 16px; color: var(--color-accent); font-weight: bold; }
+        .district-row { cursor: pointer; transition: background 0.2s; font-weight: 500; }
+        .district-row:hover { background-color: #f1f5f9; }
+        .district-row .toggle-icon { display: inline-block; width: 16px; color: var(--color-primary); font-weight: bold; }
         
-        .ward-row { display: none; background-color: #21252B; font-size: 12px; }
+        .ward-row { display: none; background-color: #f8fafc; font-size: 12px; }
         .ward-row.show { display: table-row; }
-        .ward-row td { border-bottom: 1px dashed #3F4451; color: #D1D5DB; }
+        .ward-row td { border-bottom: 1px dashed #e2e8f0; color: #475569; }
 
         .num-right { text-align: right; font-weight: bold; }
-        .text-green { color: #10B981; }
-        .text-orange { color: var(--color-accent); }
+        .text-green { color: #059669; }
+        .text-orange { color: var(--color-primary); }
 
-        #map-panel { width: 30%; height: 100%; position: relative; }
-        #map { width: 100%; height: 100%; background: #1A1D24; }
+        #map-panel { width: 30%; height: 100%; position: relative; border-left: 1px solid var(--border-color); }
+        /* Đổi map sang tone sáng */
+        #map { width: 100%; height: 100%; background: #e5e7eb; } 
+        
         .leaflet-popup-content-wrapper {
-            background: var(--bg-panel) !important; color: var(--text-main) !important;
-            border: 1px solid var(--border-color);
+            background: #ffffff !important; color: #1e293b !important;
+            border: 1px solid var(--border-color); font-family: 'Segoe UI', Tahoma, sans-serif;
+            border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-        .leaflet-popup-tip { background: var(--bg-panel) !important; }
+        .leaflet-popup-tip { background: #ffffff !important; }
         
         #map-loader {
-            position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: rgba(0,0,0,0.7); color: #fff; padding: 5px 10px;
-            border-radius: 4px; font-size: 11px; display: none;
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            background: rgba(255, 255, 255, 0.9); color: var(--color-primary); padding: 8px 16px;
+            border-radius: 20px; font-size: 12px; font-weight: bold; display: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: 1px solid #fdba74;
         }
     </style>
 </head>
@@ -143,7 +148,7 @@
                     <tr>
                         <th>Area</th>
                         <th>Tỉnh / Thành Phố</th>
-                        <th>Quận / Huyện <span style="font-size: 10px; font-weight:normal;">(Click để xem Phường)</span></th>
+                        <th>Quận / Huyện <span style="font-size: 10px; font-weight:normal;">(Click xem Phường)</span></th>
                         <th>Phường / Xã</th>
                         <th class="num-right">Khách Trên Tuyến</th>
                         <th class="num-right">Khách Lên Đơn</th>
@@ -162,7 +167,7 @@
     </div>
 
     <div id="map-panel">
-        <div id="map-loader">⌛ Đang tải bản đồ...</div>
+        <div id="map-loader">⌛ Đang tính toán bản đồ...</div>
         <div id="map"></div>
     </div>
 </div>
@@ -176,19 +181,24 @@
     const DATA_BUCKET = 'data';
     
     const FILE_ROUTE = 'tuyen.xlsx'; 
-    const GEOJSON_SCAN = 'gadm41_VNM_3.json'; // Dùng ẩn để bẫy tọa độ
+    const GEOJSON_SCAN = 'gadm41_VNM_3.json'; // Bản đồ full (Dùng quét tọa độ + vẽ Phường)
     const GEOJSON_PROV = 'gadm41_VNM_1.json'; // Bản đồ Tỉnh
     const GEOJSON_DIST = 'gadm41_VNM_2.json'; // Bản đồ Huyện
 
+    // BASEMAP NỀN SÁNG (CartoDB Positron)
     const map = L.map('map', { zoomControl: false }).setView([16.0, 106.0], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let wardFeatures = []; 
-    let provinceGeoData = null; // Cache bản đồ Tỉnh
-    let districtGeoData = null; // Cache bản đồ Huyện
+    let provinceGeoData = null; 
+    let districtGeoData = null; 
     let geoJsonLayer = null;
     let rawCustomerRecords = []; 
+    
+    // BIẾN TOÀN CỤC: Lưu trạng thái dữ liệu đã tổng hợp và Huyện đang chọn
+    let currentAggregatedData = []; 
+    let activeDistrictName = null; 
 
     async function fetchSupabaseGeoJSON(fileName) {
         const { data: urlData, error } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
@@ -202,9 +212,7 @@
         btn.disabled = true;
         
         try {
-            btn.innerHTML = "⌛ Đang tải dữ liệu...";
-            
-            // 1. FETCH SALES
+            btn.innerHTML = "⌛ Đang nạp Sales...";
             const salesFiles = ['dataM5.js', 'dataM6.js', 'dataM7.js'];
             const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(salesFiles, 60);
             if (salesUrls) {
@@ -218,9 +226,8 @@
                 }
             }
 
-            // 2. FETCH MAP 3 (Chỉ để quét tọa độ, không vẽ)
             if (wardFeatures.length === 0) {
-                btn.innerHTML = "⌛ Đang thiết lập bẫy tọa độ...";
+                btn.innerHTML = "⌛ Đang nạp hệ tọa độ...";
                 let masterGeoJSON = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
                 masterGeoJSON.features.forEach(f => {
                     f._bbox = turf.bbox(f); 
@@ -229,8 +236,7 @@
                 populateProvinceFilter();
             }
 
-            // 3. FETCH EXCEL
-            btn.innerHTML = "⌛ Đang tải Excel...";
+            btn.innerHTML = "⌛ Đang đọc tuyến...";
             const { data: excelUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
             if (excelUrl && excelUrl[0]) {
                 let resExcel = await fetch(excelUrl[0].signedUrl);
@@ -238,8 +244,8 @@
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                await buildRawCustomerRecordsAsync(sheetData, (progressMsg) => { btn.innerHTML = progressMsg; });
-                runFilter(); // Gọi filter để tự động lấy và vẽ bản đồ Tỉnh
+                await buildRawCustomerRecordsAsync(sheetData, (msg) => { btn.innerHTML = msg; });
+                runFilter(); 
             }
 
         } catch (error) {
@@ -252,8 +258,8 @@
     }
 
     function populateProvinceFilter() {
-        // Dùng chuẩn file VNM_3 của bạn: Tỉnh lưu ở COUNTRY
-        let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
+        // Hỗ trợ cả 2 tên trường hay gặp
+        let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY || f.properties.NAME_1))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
@@ -299,9 +305,9 @@
                     if (matchedWard) {
                         rawCustomerRecords.push({
                             cusCode: ma_kh, area: area,
-                            province: matchedWard.COUNTRY || "Chưa rõ", 
-                            district: matchedWard.NL_NAME_1 || "Chưa rõ",
-                            ward: matchedWard.NAME_2 || "Chưa rõ"
+                            province: matchedWard.COUNTRY || matchedWard.NAME_1 || "Chưa rõ", 
+                            district: matchedWard.NL_NAME_1 || matchedWard.NAME_2 || "Chưa rõ",
+                            ward: matchedWard.NAME_2 || matchedWard.VARNAME_3 || "Chưa rõ"
                         });
                     } else {
                         rawCustomerRecords.push({
@@ -312,7 +318,7 @@
                 }
 
                 if (index < total) {
-                    updateProgressFn(`⌛ Đang phân tích: ${Math.round((index / total) * 100)}%`);
+                    updateProgressFn(`⌛ Đang Map Tọa Độ: ${Math.round((index / total) * 100)}%`);
                     setTimeout(processNextChunk, 0); 
                 } else {
                     const selArea = document.getElementById('sel-area');
@@ -327,7 +333,6 @@
 
     function processSalesDataAndAggregate() {
         const selectedMonth = document.getElementById('sel-month').value; 
-        
         let targetArray = [];
         try {
             if (selectedMonth === 'M7' && typeof dbSalesM7 !== 'undefined') targetArray = dbSalesM7;
@@ -392,91 +397,48 @@
         });
     }
 
-    // HÀM CHẠY LỌC BẤT ĐỒNG BỘ ĐỂ TẢI BẢN ĐỒ CHUYÊN BIỆT
-    async function runFilter() {
+    // GỌI KHI ĐỔI BỘ LỌC TỈNH / AREA / THÁNG
+    function runFilter() {
         if (rawCustomerRecords.length === 0) return; 
 
-        let aggregatedData = processSalesDataAndAggregate();
+        // Reset trạng thái cấp Phường/Xã khi lọc lại
+        activeDistrictName = null; 
+
+        currentAggregatedData = processSalesDataAndAggregate();
 
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        // 1. CẬP NHẬT BẢNG (Giữ nguyên cấu trúc)
-        let displayTableData = aggregatedData.filter(r => {
+        let displayTableData = currentAggregatedData.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
             return true;
         });
+
         renderTableRows(displayTableData);
-
-        // 2. VẼ MAP LAZY LOADING
-        document.getElementById('map-loader').style.display = 'block';
-
-        try {
-            if (!selectedProvince) {
-                // CHẾ ĐỘ 1: VẼ CẤP TỈNH (Khi không lọc Tỉnh)
-                if (!provinceGeoData) provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
-
-                // Gom nhóm doanh số từ cấp Huyện lên cấp Tỉnh
-                let provAgg = {};
-                displayTableData.forEach(d => {
-                    if (!provAgg[d.province]) provAgg[d.province] = { onRoute: 0, ordered: 0, revenue: 0 };
-                    provAgg[d.province].onRoute += d.onRoute;
-                    provAgg[d.province].ordered += d.ordered;
-                    provAgg[d.province].revenue += d.revenue;
-                });
-
-                let mapFeatures = provinceGeoData.features.map(f => {
-                    let p = f.properties;
-                    // CHÚ Ý: Cột chứa Tên Tỉnh trong file VNM_1 của bạn. (Mặc định GADM là NAME_1)
-                    let provName = p.NAME_1 || p.COUNTRY; 
-                    
-                    let match = provAgg[provName];
-                    p._mapOnRoute = match ? match.onRoute : 0;
-                    p._mapOrdered = match ? match.ordered : 0;
-                    p._mapRevenue = match ? match.revenue : 0;
-                    p._mapLabel = `Tỉnh/TP: ${provName}`;
-                    return f;
-                }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true);
-
-                renderMapLayer(mapFeatures);
-
-            } else {
-                // CHẾ ĐỘ 2: VẼ CẤP HUYỆN (Chỉ nhặt đúng huyện của Tỉnh đang chọn)
-                if (!districtGeoData) districtGeoData = await fetchSupabaseGeoJSON(GEOJSON_DIST);
-
-                let mapFeatures = districtGeoData.features.filter(f => {
-                    let p = f.properties;
-                    // CHÚ Ý: Cột chứa Tên Tỉnh và Huyện trong file VNM_2. 
-                    let provName = p.NAME_1 || p.COUNTRY;
-                    let distName = p.NAME_2 || p.NL_NAME_1;
-
-                    if (provName !== selectedProvince) return false;
-                    
-                    let matchData = displayTableData.find(d => d.district === distName);
-                    p._mapOnRoute = matchData ? matchData.onRoute : 0;
-                    p._mapOrdered = matchData ? matchData.ordered : 0;
-                    p._mapRevenue = matchData ? matchData.revenue : 0;
-                    p._mapLabel = `Quận/Huyện: ${distName}<br>Tỉnh: ${provName}`;
-                    
-                    return true;
-                });
-
-                renderMapLayer(mapFeatures);
-            }
-        } catch (err) {
-            console.error("Lỗi vẽ bản đồ:", err);
-        } finally {
-            document.getElementById('map-loader').style.display = 'none';
-        }
+        renderMapState(); // Kích hoạt vẽ bản đồ
     }
 
-    function toggleWards(districtId) {
-        let wardRows = document.querySelectorAll(`.ward-row-${districtId}`);
-        let icon = document.getElementById(`icon-${districtId}`);
-        let isExpanding = icon.innerText === '[+]';
-        icon.innerText = isExpanding ? '[-]' : '[+]';
-        wardRows.forEach(row => isExpanding ? row.classList.add('show') : row.classList.remove('show'));
+    // SỰ KIỆN CLICK VÀO DÒNG QUẬN/HUYỆN Ở BẢNG (ACCORDION)
+    function toggleWards(distId, distName) {
+        let isExpanding = document.getElementById(`icon-${distId}`).innerText === '[+]';
+
+        // 1. Thu gọn tất cả các Quận/Huyện đang mở
+        document.querySelectorAll('.ward-row').forEach(row => row.classList.remove('show'));
+        document.querySelectorAll('.toggle-icon').forEach(icon => icon.innerText = '[+]');
+
+        // 2. Nếu đang bấm mở, thì xổ dòng Phường/Xã ra và đánh dấu active
+        if (isExpanding) {
+            document.querySelectorAll(`.ward-row-${distId}`).forEach(row => row.classList.add('show'));
+            document.getElementById(`icon-${distId}`).innerText = '[-]';
+            activeDistrictName = distName;
+        } else {
+            // Đóng lại thì hủy trạng thái active
+            activeDistrictName = null;
+        }
+
+        // 3. Ra lệnh vẽ lại bản đồ (Bản đồ sẽ tự zoom theo trạng thái active)
+        renderMapState();
     }
 
     function renderTableRows(rowsData) {
@@ -492,12 +454,13 @@
 
         rowsData.forEach((p, index) => {
             let distId = `dist_${index}`; 
+            // CẬP NHẬT: Gắn sự kiện click có chứa tham số tên Huyện (p.district)
             tbody.innerHTML += `
-                <tr class="district-row" onclick="toggleWards('${distId}')">
-                    <td style="color: var(--color-light-1);">${p.area}</td>
+                <tr class="district-row" onclick="toggleWards('${distId}', '${p.district}')">
+                    <td style="color: var(--text-muted);">${p.area}</td>
                     <td>${p.province}</td>
-                    <td style="font-weight: bold; color: var(--color-light-2);"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td>
-                    <td>-- Tổng Hợp --</td>
+                    <td style="font-weight: bold; color: var(--text-main);"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td>
+                    <td style="color: var(--text-muted);">-- Tổng Hợp --</td>
                     <td class="num-right">${p.onRoute.toLocaleString()}</td>
                     <td class="num-right text-orange">${p.ordered.toLocaleString()}</td>
                     <td class="num-right text-green">${p.revenue.toLocaleString()} đ</td>
@@ -507,19 +470,112 @@
             p.wardsData.forEach(w => {
                 tbody.innerHTML += `
                     <tr class="ward-row ward-row-${distId}">
-                        <td></td><td></td><td style="text-align: right; color:#6B7280;">↳</td>
-                        <td style="color: var(--color-light-2);">${w.wardName}</td>
-                        <td class="num-right" style="color: #9CA3AF;">${w.onRoute.toLocaleString()}</td>
-                        <td class="num-right" style="color: #D3885D;">${w.ordered.toLocaleString()}</td>
-                        <td class="num-right" style="color: #10B981;">${w.revenue.toLocaleString()} đ</td>
+                        <td></td><td></td><td style="text-align: right; color:#cbd5e1;">↳</td>
+                        <td style="color: var(--text-main);">${w.wardName}</td>
+                        <td class="num-right" style="color: #64748b;">${w.onRoute.toLocaleString()}</td>
+                        <td class="num-right" style="color: #ea580c;">${w.ordered.toLocaleString()}</td>
+                        <td class="num-right" style="color: #059669;">${w.revenue.toLocaleString()} đ</td>
                     </tr>
                 `;
             });
         });
     }
 
+    // LOGIC VẼ BẢN ĐỒ TỰ ĐỘNG THEO 3 CẤP ĐỘ
+    async function renderMapState() {
+        const loader = document.getElementById('map-loader');
+        loader.style.display = 'block';
+
+        try {
+            const selectedProvince = document.getElementById('sel-province').value;
+            const selectedArea = document.getElementById('sel-area').value;
+
+            // ===== CẤP 3: VẼ PHƯỜNG XÃ (Vì user đã click vào 1 Huyện) =====
+            if (activeDistrictName && selectedProvince) {
+                let mapFeatures = wardFeatures.filter(f => {
+                    let p = f.properties;
+                    let pProv = p.COUNTRY || p.NAME_1;
+                    let pDist = p.NL_NAME_1 || p.NAME_2;
+                    return (pProv === selectedProvince) && (pDist === activeDistrictName);
+                }).map(f => {
+                    let p = f.properties;
+                    let wardName = p.NAME_2 || p.VARNAME_3 || "Chưa rõ";
+                    
+                    let matchData = null;
+                    let distData = currentAggregatedData.find(d => d.province === selectedProvince && d.district === activeDistrictName);
+                    if (distData) { matchData = distData.wardsData.find(w => w.wardName === wardName); }
+
+                    p._mapOnRoute = matchData ? matchData.onRoute : 0;
+                    p._mapOrdered = matchData ? matchData.ordered : 0;
+                    p._mapRevenue = matchData ? matchData.revenue : 0;
+                    p._mapLabel = `<span style='color:#64748b;'>Phường/Xã:</span> <span style='font-size:14px; font-weight:bold;'>${wardName}</span><br>Thuộc ${activeDistrictName}`;
+                    return f;
+                });
+                renderMapLayer(mapFeatures);
+
+            // ===== CẤP 2: VẼ QUẬN HUYỆN (Vì user đã chọn 1 Tỉnh ở Bộ Lọc) =====
+            } else if (selectedProvince) {
+                if (!districtGeoData) districtGeoData = await fetchSupabaseGeoJSON(GEOJSON_DIST);
+                
+                let mapFeatures = districtGeoData.features.filter(f => {
+                    let p = f.properties;
+                    let provName = p.NAME_1 || p.COUNTRY;
+                    return provName === selectedProvince;
+                }).map(f => {
+                    let p = f.properties;
+                    let distName = p.NAME_2 || p.NL_NAME_1;
+                    let provName = p.NAME_1 || p.COUNTRY;
+
+                    let matchData = currentAggregatedData.find(d => d.province === provName && d.district === distName);
+                    p._mapOnRoute = matchData ? matchData.onRoute : 0;
+                    p._mapOrdered = matchData ? matchData.ordered : 0;
+                    p._mapRevenue = matchData ? matchData.revenue : 0;
+                    p._mapLabel = `<span style='color:#64748b;'>Quận/Huyện:</span> <span style='font-size:14px; font-weight:bold;'>${distName}</span>`;
+                    return f;
+                });
+                renderMapLayer(mapFeatures);
+
+            // ===== CẤP 1: VẼ TỈNH THÀNH (Mặc định) =====
+            } else {
+                if (!provinceGeoData) provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
+
+                let provAgg = {};
+                currentAggregatedData.forEach(d => {
+                    if (selectedArea && d.area !== selectedArea) return; 
+                    if (!provAgg[d.province]) provAgg[d.province] = { onRoute: 0, ordered: 0, revenue: 0 };
+                    provAgg[d.province].onRoute += d.onRoute;
+                    provAgg[d.province].ordered += d.ordered;
+                    provAgg[d.province].revenue += d.revenue;
+                });
+
+                let mapFeatures = provinceGeoData.features.map(f => {
+                    let p = f.properties;
+                    let provName = p.NAME_1 || p.COUNTRY;
+                    let match = provAgg[provName];
+
+                    p._mapOnRoute = match ? match.onRoute : 0;
+                    p._mapOrdered = match ? match.ordered : 0;
+                    p._mapRevenue = match ? match.revenue : 0;
+                    p._mapLabel = `<span style='color:#64748b;'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
+                    return f;
+                }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true); // Nếu lọc Area, chỉ vẽ tỉnh có KH
+
+                renderMapLayer(mapFeatures);
+            }
+        } catch (err) {
+            console.error("Lỗi xử lý bản đồ:", err);
+        } finally {
+            loader.style.display = 'none';
+        }
+    }
+
+    // THANG MÀU THEO TONE LIGHT MODE (Cam/Đỏ)
     function mapColorScale(revenue) {
-        return revenue > 50000000 ? '#7D3F20' : revenue > 20000000 ? '#A86134' : revenue > 5000000  ? '#D3885D' : revenue > 0 ? '#E8B892' : 'transparent';
+        return revenue > 50000000 ? '#b91c1c' :  // Đỏ sậm
+               revenue > 20000000 ? '#ea580c' :  // Cam đậm
+               revenue > 5000000  ? '#f59e0b' :  // Vàng cam
+               revenue > 0        ? '#fcd34d' :  // Vàng nhạt
+                                    'rgba(255,255,255,0.01)'; // Trong suốt/Trắng
     }
 
     function renderMapLayer(featuresList) {
@@ -528,17 +584,23 @@
 
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (feature) {
-                return { fillColor: mapColorScale(feature.properties._mapRevenue), weight: 1.5, opacity: 1, color: 'var(--border-color)', fillOpacity: 0.75 };
+                return { 
+                    fillColor: mapColorScale(feature.properties._mapRevenue), 
+                    weight: 1,  // Viền mỏng
+                    opacity: 1, 
+                    color: '#000000', // CHUẨN VIỀN ĐEN TRÊN NỀN TRẮNG
+                    fillOpacity: 0.65 
+                };
             },
             onEachFeature: function (feature, layer) {
                 let p = feature.properties;
                 layer.bindPopup(`
-                    <div style="font-size:12px; line-height: 1.6;">
-                        <b style="color:var(--color-light-1); font-size:14px;">${p._mapLabel}</b><br>
-                        <hr style="border-color:#4b5563; margin:5px 0;">
-                        Khách trên tuyến: <b>${p._mapOnRoute}</b><br>
-                        Khách lên đơn: <b>${p._mapOrdered}</b><br>
-                        Doanh số vùng: <b style="color:#10B981;">${p._mapRevenue.toLocaleString()} đ</b>
+                    <div style="font-size:12px; line-height: 1.6; min-width: 140px;">
+                        ${p._mapLabel}
+                        <hr style="border-color:#e2e8f0; margin:6px 0;">
+                        Khách tuyến: <b>${p._mapOnRoute.toLocaleString()}</b><br>
+                        Lên đơn: <b style="color:#ea580c;">${p._mapOrdered.toLocaleString()}</b><br>
+                        Doanh số: <b style="color:#059669; font-size:13px;">${p._mapRevenue.toLocaleString()} đ</b>
                     </div>
                 `);
             }
@@ -546,7 +608,7 @@
 
         if (featuresList.length > 0) {
             let bbox = turf.bbox(displayCollection);
-            map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], { padding: [10, 10] });
+            map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], { padding: [20, 20], maxZoom: 13 });
         }
     }
 </script>
