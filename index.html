@@ -3,17 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - Drilldown Tối Ưu</title>
+    <title>Báo Cáo Coverage - Tách Tháng & Drilldown</title>
     
-    <!-- Thư viện chuyên dụng -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-
-    <!-- NẾU BẠN CHƯA CÓ FILE DATA M7 Ở ĐÂY THÌ PHẢI THÊM VÀO NHÉ -->
-    <!-- <script src="đường_dẫn_tới_file/dataM7.js"></script> -->
 
     <style>
         :root {
@@ -54,13 +50,13 @@
 
         .header-section h2 { margin: 0; color: var(--color-light-1); font-size: 18px; }
 
-        .filter-group { display: flex; gap: 10px; align-items: center; }
+        .filter-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .filter-item { display: flex; flex-direction: column; gap: 4px; }
         .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; }
         select {
             background: var(--bg-panel); color: var(--text-main);
             border: 1px solid var(--border-color); padding: 8px 12px;
-            border-radius: 6px; outline: none; font-size: 13px;
+            border-radius: 6px; outline: none; font-size: 13px; min-width: 120px;
         }
 
         .btn-primary { 
@@ -114,6 +110,15 @@
             <h2>📊 BÁO CÁO COVERAGE - CẤP QUẬN HUYỆN</h2>
             
             <div class="filter-group">
+                <!-- THÊM BỘ LỌC THÁNG ĐỂ TÁCH DATA -->
+                <div class="filter-item">
+                    <label>Chọn Tháng Doanh Số</label>
+                    <select id="sel-month" onchange="filterData()">
+                        <option value="M7" selected>Tháng 7 (M7)</option>
+                        <option value="M6">Tháng 6 (M6)</option>
+                        <option value="M5">Tháng 5 (M5)</option>
+                    </select>
+                </div>
                 <div class="filter-item">
                     <label>Khu vực (Area)</label>
                     <select id="sel-area" onchange="filterData()"><option value="">-- Tất cả Area --</option></select>
@@ -142,7 +147,7 @@
                 <tbody id="summary-body">
                     <tr>
                         <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
-                            Nhấn nút "Nạp Dữ Liệu" để lấy thông tin.
+                            Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Map.
                         </td>
                     </tr>
                 </tbody>
@@ -159,10 +164,12 @@
     const SUPABASE_URL = 'https://mrqldgycwovpbmzdeuyz.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const BUCKET_NAME = 'mappingdata';
+    
+    // CẤU HÌNH 2 BUCKET RIÊNG BIỆT 
+    const MAP_BUCKET = 'mappingdata';
+    const DATA_BUCKET = 'data';
     
     const FILE_ROUTE = 'tuyen.xlsx'; 
-    // Đảm bảo tên file này là file bạn đã filter từ Mapshaper
     const GEOJSON_FILE = 'gadm41_VNM_3.json'; 
 
     const map = L.map('map', { zoomControl: false }).setView([10.8231, 106.6297], 6);
@@ -170,41 +177,80 @@
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let wardFeatures = []; 
-    let allProcessedDistricts = []; 
     let geoJsonLayer = null;
+    
+    // Biến lưu trữ bản ghi thô (chưa tính doanh số) để tái sử dụng khi người dùng đổi bộ lọc tháng
+    let rawCustomerRecords = []; 
 
     async function initLoadAndProcess() {
         const btn = document.getElementById('btnRun');
-        btn.innerHTML = "⌛ Đang nạp dữ liệu...";
+        btn.innerHTML = "⌛ Đang tải Sales & Map...";
         btn.disabled = true;
         
         setTimeout(async () => {
             try {
+                // ==========================================
+                // 1. FETCH DATA SALES (dataM5, dataM6, dataM7) TỪ BUCKET 'data'
+                // ==========================================
+                const salesFiles = ['dataM5.js', 'dataM6.js', 'dataM7.js'];
+                const { data: salesUrls, error: salesErr } = await supabaseClient
+                    .storage
+                    .from(DATA_BUCKET) // <-- Sử dụng đúng bucket DATA
+                    .createSignedUrls(salesFiles, 60);
+
+                if (salesErr || !salesUrls) {
+                    console.warn("⚠️ Không lấy được link file Sales từ Bucket data:", salesErr);
+                } else {
+                    for (let item of salesUrls) {
+                        if (item.signedUrl) {
+                            let response = await fetch(item.signedUrl);
+                            let scriptText = await response.text();
+                            // Chèn động script vào trình duyệt để window nhận diện dbSalesM7...
+                            let scriptTag = document.createElement('script');
+                            scriptTag.text = scriptText;
+                            document.head.appendChild(scriptTag);
+                        }
+                    }
+                }
+
+                // ==========================================
+                // 2. FETCH FILE GEOJSON (BUCKET mappingdata)
+                // ==========================================
                 if (wardFeatures.length === 0) {
-                    const { data: geoUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([GEOJSON_FILE], 60);
+                    const { data: geoUrl, error: geoErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([GEOJSON_FILE], 60);
+                    if (geoErr || !geoUrl || !geoUrl[0]) throw new Error(`Không tìm thấy file ${GEOJSON_FILE} ở mappingdata!`);
+
                     let resGeo = await fetch(geoUrl[0].signedUrl);
+                    if (!resGeo.ok) throw new Error(`Lỗi tải GeoJSON.`);
                     let masterGeoJSON = await resGeo.json();
                     
                     masterGeoJSON.features.forEach(f => {
                         f._bbox = turf.bbox(f); 
-                        // Vì file đã lọc sạch, tất cả đều là Phường/Xã
                         wardFeatures.push(f);
                     });
-
                     populateProvinceFilter();
                 }
 
-                const { data: excelUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([FILE_ROUTE], 60);
+                // ==========================================
+                // 3. FETCH FILE EXCEL TUYẾN (BUCKET mappingdata)
+                // ==========================================
+                const { data: excelUrl, error: exErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
+                if (exErr || !excelUrl || !excelUrl[0]) throw new Error("Lỗi kết nối file Excel tuyến.");
+
                 let resExcel = await fetch(excelUrl[0].signedUrl);
                 let arrBuffer = await resExcel.arrayBuffer();
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                processExcelData(sheetData);
+                // XỬ LÝ KHÔNG GIAN BƯỚC ĐẦU (Chưa gán doanh số, chỉ map khách với phường/xã)
+                buildRawCustomerRecords(sheetData);
+
+                // Cuối cùng: Kích hoạt bộ lọc để tự động tính doanh số theo Tháng đang chọn
+                filterData();
 
             } catch (error) {
                 console.error(error);
-                alert("Lỗi hệ thống: " + error.message);
+                alert("❌ LỖI HỆ THỐNG: " + error.message);
             } finally {
                 btn.innerHTML = "🔄 Nạp Dữ Liệu";
                 btn.disabled = false;
@@ -213,38 +259,16 @@
     }
 
     function populateProvinceFilter() {
-        // Sử dụng NAME_1 vì chuẩn GADM lưu Tỉnh ở cột này
         let provinces = [...new Set(wardFeatures.map(f => f.properties.NAME_1))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    function getCustomerSalesSummary(cusCode) {
-        let totalSales = 0;
-        let isOrdered = false;
-        let targetArray = window.dbSalesM7 || window.dbSalesM6 || window.dbSalesM5 || [];
-        
-        // Dùng parseInt để lờ đi các số 0 ở đầu do Excel tự động xóa
-        let cleanInputCode = parseInt(cusCode, 10);
-
-        if (Array.isArray(targetArray) && !isNaN(cleanInputCode)) {
-            targetArray.forEach(line => {
-                if (line && line.cusCode) {
-                    let cleanDbCode = parseInt(line.cusCode, 10);
-                    if (cleanDbCode === cleanInputCode) {
-                        totalSales += parseFloat(line.sales) || 0;
-                        isOrdered = true;
-                    }
-                }
-            });
-        }
-        return { sales: totalSales, isOrdered: isOrdered };
-    }
-
-    function processExcelData(sheetData) {
+    // Hàm này chỉ chạy 1 lần khi load Excel, quét tọa độ và phân vùng hành chính
+    function buildRawCustomerRecords(sheetData) {
         let areaSet = new Set();
-        let records = [];
+        rawCustomerRecords = []; // Reset dữ liệu gốc
 
         sheetData.forEach((row, idx) => {
             if (idx === 0 || !row[5]) return; 
@@ -256,12 +280,9 @@
             
             if (area) areaSet.add(area);
 
-            let salesSummary = getCustomerSalesSummary(ma_kh);
             let matchedWard = null;
-
             if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                 let pt = turf.point([lng, lat]);
-
                 for (let f of wardFeatures) {
                     const bbox = f._bbox;
                     if (lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
@@ -273,44 +294,58 @@
                 }
             }
 
-            // Map lại chuẩn thuộc tính file GADM: NAME_1 (Tỉnh), NAME_2 (Quận), NAME_3 (Phường)
             if (matchedWard) {
-                records.push({
+                rawCustomerRecords.push({
                     cusCode: ma_kh,
                     area: area,
                     province: matchedWard.NAME_1 || "Chưa rõ", 
                     district: matchedWard.NAME_2 || "Chưa rõ",
-                    ward: matchedWard.NAME_3 || matchedWard.VARNAME_3 || "Chưa rõ", 
-                    sales: salesSummary.sales,
-                    isOrdered: salesSummary.isOrdered
+                    ward: matchedWard.NAME_3 || matchedWard.VARNAME_3 || "Chưa rõ"
                 });
             } else {
-                records.push({
+                rawCustomerRecords.push({
                     cusCode: ma_kh, area: area,
-                    province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ",
-                    sales: salesSummary.sales, isOrdered: salesSummary.isOrdered
+                    province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ"
                 });
             }
         });
 
+        // Đổ danh sách Area vào bộ lọc
         const selArea = document.getElementById('sel-area');
         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
         [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
-
-        allProcessedDistricts = aggregateHierarchicalRows(records);
-        filterData();
     }
 
-    function aggregateHierarchicalRows(records) {
+    // HÀM TÍNH TOÁN CỐT LÕI: Gắn Doanh Số Tốc Độ Cao Bằng Lookup Dictionary
+    function processSalesDataAndAggregate() {
+        const selectedMonth = document.getElementById('sel-month').value; // M5, M6, or M7
+        const targetArrayName = 'dbSales' + selectedMonth;
+        const targetArray = window[targetArrayName] || [];
+
+        // 1. Xây dựng Dictionary Doanh Số để tra cứu O(1)
+        let salesDictionary = {};
+        if (Array.isArray(targetArray)) {
+            targetArray.forEach(line => {
+                if (line && line.cusCode) {
+                    let cleanDbCode = parseInt(line.cusCode, 10);
+                    if (!isNaN(cleanDbCode)) {
+                        salesDictionary[cleanDbCode] = (salesDictionary[cleanDbCode] || 0) + (parseFloat(line.sales) || 0);
+                    }
+                }
+            });
+        }
+
+        // 2. Gom nhóm Phân Cấp (Hierarchical Aggregation) kết hợp Dictionary Doanh Số
         let districtGroups = {};
         
-        records.forEach(r => {
+        rawCustomerRecords.forEach(r => {
             let distKey = `${r.area}|${r.province}|${r.district}`;
             
             if (!districtGroups[distKey]) {
                 districtGroups[distKey] = {
                     area: r.area, province: r.province, district: r.district,
                     cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
+                    revenue: 0,
                     wards: {} 
                 };
             }
@@ -319,29 +354,42 @@
             if (!districtGroups[distKey].wards[wardKey]) {
                 districtGroups[distKey].wards[wardKey] = {
                     wardName: r.ward,
-                    cusOnRouteSet: new Set(), cusOrderedSet: new Set()
+                    cusOnRouteSet: new Set(), cusOrderedSet: new Set(),
+                    revenue: 0
                 };
             }
 
+            // Ghi nhận khách hàng lên tuyến
             districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
-            if (r.isOrdered) districtGroups[distKey].cusOrderedSet.add(r.cusCode);
-
             districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
-            if (r.isOrdered) districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
+
+            // Tra cứu doanh số thực từ Dictionary
+            let cleanCusCode = parseInt(r.cusCode, 10);
+            let cusSales = salesDictionary[cleanCusCode] || 0;
+            let isOrdered = cusSales > 0;
+
+            if (isOrdered) {
+                // Nếu khách có đơn trong tháng này, add vào Set để không bị tính trùng
+                if (!districtGroups[distKey].cusOrderedSet.has(r.cusCode)) {
+                    districtGroups[distKey].cusOrderedSet.add(r.cusCode);
+                    districtGroups[distKey].revenue += cusSales;
+                }
+                
+                if (!districtGroups[distKey].wards[wardKey].cusOrderedSet.has(r.cusCode)) {
+                    districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
+                    districtGroups[distKey].wards[wardKey].revenue += cusSales;
+                }
+            }
         });
 
+        // 3. Format lại mảng trả về
         return Object.values(districtGroups).map(d => {
-            let distRev = 0;
-            d.cusOrderedSet.forEach(cus => distRev += getCustomerSalesSummary(cus).sales);
-            
             let wardArr = Object.values(d.wards).map(w => {
-                let wRev = 0;
-                w.cusOrderedSet.forEach(cus => wRev += getCustomerSalesSummary(cus).sales);
                 return {
                     wardName: w.wardName,
                     onRoute: w.cusOnRouteSet.size,
                     ordered: w.cusOrderedSet.size,
-                    revenue: wRev
+                    revenue: w.revenue
                 }
             }).sort((a,b) => b.revenue - a.revenue);
 
@@ -349,29 +397,36 @@
                 area: d.area, province: d.province, district: d.district,
                 onRoute: d.cusOnRouteSet.size,
                 ordered: d.cusOrderedSet.size,
-                revenue: distRev,
+                revenue: d.revenue,
                 wardsData: wardArr 
             };
         });
     }
 
+    // HÀM LỌC CHÍNH ĐƯỢC GỌI KHI NGƯỜI DÙNG ĐỔI BỘ LỌC (Tháng, Tỉnh, Area)
     function filterData() {
+        if (rawCustomerRecords.length === 0) return; // Chưa nạp dữ liệu thì bỏ qua
+
+        // Tái tính toán doanh số dựa trên tháng vừa chọn
+        let aggregatedData = processSalesDataAndAggregate();
+
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        let displayTableData = allProcessedDistricts.filter(r => {
+        // Lọc hiển thị Bảng
+        let displayTableData = aggregatedData.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
             return true;
         });
         renderTableRows(displayTableData);
 
-        // Mượn lớp Phường/Xã để vẽ bản đồ nhưng đồng bộ số liệu hiển thị lên cấp Quận/Huyện
+        // Lọc hiển thị Map
         let mapFeatures = wardFeatures.filter(f => {
             let p = f.properties;
             if (selectedProvince && p.NAME_1 !== selectedProvince) return false;
             
-            let matchData = allProcessedDistricts.find(d => d.province === p.NAME_1 && d.district === p.NAME_2);
+            let matchData = aggregatedData.find(d => d.province === p.NAME_1 && d.district === p.NAME_2);
             p._mapOnRoute = matchData ? matchData.onRoute : 0;
             p._mapOrdered = matchData ? matchData.ordered : 0;
             p._mapRevenue = matchData ? matchData.revenue : 0;
