@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báo Cáo Độ Phủ & Doanh Số</title>
+    
+    <!-- Thư viện -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <style>
+        /* Bảng màu tham khảo từ images.jfif: #7D3F20, #A86134, #D3885D, #E8B892, #F9E3C9 */
+        :root {
+            --bg-dark: #22252A;
+            --bg-panel: #2D3139;
+            --color-1: #7D3F20;
+            --color-2: #A86134;
+            --color-3: #D3885D;
+            --color-4: #E8B892;
+            --color-5: #F9E3C9;
+            --text-light: #e2e8f0;
+            --border-color: #4b5563;
+        }
+
+        body, html { 
+            margin: 0; padding: 0; height: 100%; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: var(--bg-dark); 
+            color: var(--text-light);
+            font-size: 13px;
+        }
+
+        #app-container { 
+            display: flex; height: 100vh; width: 100%; 
+        }
+        
+        /* Bảng Báo Cáo (70%) */
+        #report-panel { 
+            width: 70%; height: 100%; 
+            display: flex; flex-direction: column; 
+            padding: 20px; box-sizing: border-box;
+            background: var(--bg-dark);
+            overflow-y: hidden;
+        }
+
+        .header-section {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-section h2 {
+            margin: 0;
+            color: var(--color-4);
+        }
+
+        .btn-action {
+            background-color: var(--color-2);
+            color: var(--color-5);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .btn-action:hover { background-color: var(--color-1); }
+
+        #table-container { 
+            flex-grow: 1; overflow-y: auto; 
+            background: var(--bg-panel);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table { 
+            width: 100%; border-collapse: collapse; 
+        }
+        
+        th, td { 
+            padding: 12px 15px; text-align: left; 
+            border-bottom: 1px solid var(--border-color); 
+        }
+        
+        th { 
+            background-color: var(--color-1); 
+            color: var(--color-5); 
+            position: sticky; top: 0; z-index: 2; 
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        tr:hover { background-color: rgba(255, 255, 255, 0.05); }
+
+        .num-right { text-align: right; font-weight: bold; }
+        .text-highlight { color: var(--color-4); }
+
+        /* Bản Đồ (30%) */
+        #map-panel { 
+            width: 30%; height: 100%; 
+            border-left: 2px solid var(--color-1);
+        }
+
+        #map { width: 100%; height: 100%; background: #1e1e1e; }
+        
+        /* Chỉnh style cho Popup của Leaflet hợp với Dark Mode */
+        .leaflet-popup-content-wrapper {
+            background: var(--bg-panel);
+            color: var(--color-5);
+        }
+        .leaflet-popup-tip { background: var(--bg-panel); }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="report-panel">
+        <div class="header-section">
+            <h2>BÁO CÁO ĐỘ PHỦ TỔNG HỢP</h2>
+            <!-- Nút này để kích hoạt gọi Supabase và tính toán -->
+            <button class="btn-action" onclick="runAnalysis()">🔄 Tải & Tổng hợp Dữ liệu</button>
+        </div>
+
+        <div id="table-container">
+            <table id="summary-table">
+                <thead>
+                    <tr>
+                        <th>Area</th>
+                        <th>Tỉnh / Thành Phố</th>
+                        <th>Quận / Huyện</th>
+                        <th class="num-right">Khách Trên Tuyến</th>
+                        <th class="num-right">Khách Lên Đơn</th>
+                        <th class="num-right">Doanh Số</th>
+                    </tr>
+                </thead>
+                <tbody id="summary-body">
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: var(--color-4); padding: 30px;">
+                            Bấm "Tải & Tổng hợp Dữ liệu" để gọi Supabase và nạp file KML...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="map-panel">
+        <div id="map"></div>
+    </div>
+</div>
+
+<script>
+    // --- KHỞI TẠO BẢN ĐỒ ---
+    const map = L.map('map').setView([10.762622, 106.660172], 6); // Default view
+    
+    // Sử dụng Dark Map để hợp với Theme
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let kmlGeoJSON = null; 
+    let salesDataPoints = []; 
+    let geoJsonLayer = null;
+
+    // --- BƯỚC 1: HÀM ĐỌC FILE KML CÙNG REPO ---
+    async function loadLocalKML() {
+        try {
+            // Giả sử file KML của bạn tên là "boundaries.kml" và nằm cùng thư mục
+            const response = await fetch('./boundaries.kml');
+            if (!response.ok) throw new Error("Không tìm thấy file KML nội bộ");
+            
+            const kmlText = await response.text();
+            parseKMLtoGeoJSON(kmlText);
+            console.log("Đã tải xong KML");
+        } catch (error) {
+            console.error("Lỗi tải KML:", error);
+            // Dòng này báo lỗi trực quan cho bạn biết nếu chạy test không có file KML
+            alert("Lỗi tải KML: Đảm bảo file 'boundaries.kml' nằm cùng cấp với file HTML hoặc sửa lại đường dẫn fetch.");
+        }
+    }
+
+    // --- BƯỚC 2: HÀM GỌI SUPABASE (SKELETON) ---
+    async function fetchDataFromSupabase() {
+        // [!] CHÈN CODE SUPABASE CỦA BẠN VÀO ĐÂY
+        // Ví dụ: const { data, error } = await supabase.from('bang_doanh_so').select('*');
+        
+        console.log("Đang gọi dữ liệu từ Supabase...");
+        
+        // GIẢ LẬP DỮ LIỆU ĐỂ BẠN THẤY DEMO HOẠT ĐỘNG
+        return [
+            { lat: 10.7769, lng: 106.7009, sales: 5000000, hasOrder: true },  // Q1, HCM
+            { lat: 10.7770, lng: 106.7010, sales: 0, hasOrder: false },        // Q1, HCM (Có trên tuyến, ko lên đơn)
+            { lat: 21.0285, lng: 105.8542, sales: 15000000, hasOrder: true }   // Hoàn Kiếm, HN
+        ];
+    }
+
+    // --- HÀM CHÍNH: XỬ LÝ & TỔNG HỢP ---
+    async function runAnalysis() {
+        document.getElementById('summary-body').innerHTML = '<tr><td colspan="6" style="text-align:center;">Đang xử lý dữ liệu...</td></tr>';
+        
+        // 1. Tải KML nếu chưa có
+        if (!kmlGeoJSON) {
+            await loadLocalKML();
+        }
+
+        // 2. Lấy dữ liệu Excel/Doanh số từ Supabase
+        const rawData = await fetchDataFromSupabase();
+        
+        // 3. Chuyển đổi dữ liệu Supabase sang định dạng Point của Turf.js
+        salesDataPoints = [];
+        rawData.forEach(item => {
+            if(item.lat && item.lng) {
+                salesDataPoints.push(turf.point([item.lng, item.lat], { 
+                    sales: item.sales || 0,
+                    hasOrder: item.hasOrder || (item.sales > 0 ? true : false)
+                }));
+            }
+        });
+
+        // 4. Tính toán độ phủ (Point in Polygon)
+        processCoverage();
+    }
+
+    function processCoverage() {
+        if (!kmlGeoJSON || salesDataPoints.length === 0) return;
+
+        // Reset dữ liệu vùng
+        kmlGeoJSON.features.forEach(f => {
+            f.properties.totalCustomers = 0;
+            f.properties.orderedCustomers = 0;
+            f.properties.totalSales = 0;
+            // Xử lý cột Area nếu KML ko có (Tạo logic phân vùng phụ thuộc Tỉnh)
+            f.properties.area = getAreaName(f.properties.province); 
+        });
+
+        // Point-in-Polygon
+        salesDataPoints.forEach(pt => {
+            kmlGeoJSON.features.forEach(poly => {
+                if (turf.booleanPointInPolygon(pt, poly)) {
+                    poly.properties.totalCustomers += 1;
+                    if (pt.properties.hasOrder) {
+                        poly.properties.orderedCustomers += 1;
+                        poly.properties.totalSales += pt.properties.sales;
+                    }
+                }
+            });
+        });
+
+        updateSummaryTable();
+        renderChoroplethMap();
+    }
+
+    function updateSummaryTable() {
+        const tbody = document.getElementById('summary-body');
+        tbody.innerHTML = '';
+
+        // Lọc huyện có khách hàng (hoặc có trên tuyến)
+        let activeRegions = kmlGeoJSON.features
+            .map(f => f.properties)
+            .filter(p => p.totalCustomers > 0)
+            .sort((a, b) => b.totalSales - a.totalSales);
+
+        if (activeRegions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Không có dữ liệu tuyến nào rớt vào bản đồ.</td></tr>';
+            return;
+        }
+
+        activeRegions.forEach(p => {
+            tbody.innerHTML += `
+                <tr>
+                    <td style="color: var(--color-4);">${p.area}</td>
+                    <td>${p.province}</td>
+                    <td style="font-weight: bold; color: var(--color-5);">${p.name}</td>
+                    <td class="num-right">${p.totalCustomers.toLocaleString()}</td>
+                    <td class="num-right text-highlight">${p.orderedCustomers.toLocaleString()}</td>
+                    <td class="num-right" style="color: #10b981;">${p.totalSales.toLocaleString()} đ</td>
+                </tr>
+            `;
+        });
+    }
+
+    // --- CÁC HÀM PHỤ TRỢ ---
+    
+    // Giả lập logic phân Area (Vùng) dựa vào Tên Tỉnh
+    function getAreaName(provinceName) {
+        if(!provinceName) return "N/A";
+        const mienBac = ["Hà Nội", "Hải Phòng", "Bắc Ninh", "Quảng Ninh"]; // Thêm các tỉnh vào đây
+        const mienNam = ["Hồ Chí Minh", "Đồng Nai", "Bình Dương", "Long An"];
+        
+        if (mienBac.some(p => provinceName.includes(p))) return "Miền Bắc";
+        if (mienNam.some(p => provinceName.includes(p))) return "Miền Nam";
+        return "Miền Trung / Khác";
+    }
+
+    // Parser KML (Tương tự code cũ, trích xuất cấu trúc GADM)
+    function parseKMLtoGeoJSON(kmlText) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(kmlText, "text/xml");
+        const placemarks = xmlDoc.getElementsByTagName("Placemark");
+        let features = [];
+
+        for (let i = 0; i < placemarks.length; i++) {
+            let pm = placemarks[i];
+            let extendedData = pm.getElementsByTagName("Data");
+            let props = { name: "Unknown", province: "Unknown" };
+            
+            for (let j = 0; j < extendedData.length; j++) {
+                let nameAttr = extendedData[j].getAttribute("name");
+                let valueNode = extendedData[j].getElementsByTagName("value")[0];
+                let value = valueNode ? valueNode.textContent : "";
+                
+                if (nameAttr === "NAME_1") props.name = value;
+                if (nameAttr === "COUNTRY") props.province = value;
+            }
+
+            let coordsNode = pm.getElementsByTagName("coordinates")[0];
+            if (coordsNode) {
+                let coordString = coordsNode.textContent.trim();
+                let coordArray = coordString.split(/[\s\n]+/).map(pair => {
+                    let parts = pair.split(',');
+                    return [parseFloat(parts[0]), parseFloat(parts[1])];
+                });
+
+                if(coordArray[0][0] !== coordArray[coordArray.length-1][0] || coordArray[0][1] !== coordArray[coordArray.length-1][1]) {
+                    coordArray.push(coordArray[0]);
+                }
+                features.push(turf.polygon([[coordArray]], props));
+            }
+        }
+        kmlGeoJSON = turf.featureCollection(features);
+    }
+
+    // Tô màu bản đồ (Dùng dải màu từ images.jfif)
+    function getColor(d) {
+        return d > 50000000 ? '#7D3F20' : 
+               d > 20000000 ? '#A86134' : 
+               d > 5000000  ? '#D3885D' : 
+               d > 0        ? '#E8B892' : 
+                              'transparent'; // Không có doanh số thì trong suốt trên nền tối
+    }
+
+    function renderChoroplethMap() {
+        if (geoJsonLayer) { map.removeLayer(geoJsonLayer); }
+
+        geoJsonLayer = L.geoJSON(kmlGeoJSON, {
+            style: function (feature) {
+                return {
+                    fillColor: getColor(feature.properties.totalSales),
+                    weight: 1,
+                    opacity: 1,
+                    color: '#4b5563', // Viền xám tối
+                    fillOpacity: 0.8
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                let p = feature.properties;
+                layer.bindPopup(`
+                    <div style="font-size:13px;">
+                        <b style="color:var(--color-3); font-size:14px;">${p.name}</b><br>
+                        ${p.province}<hr style="border-color:#4b5563; margin:5px 0;">
+                        Khách trên tuyến: <b>${p.totalCustomers}</b><br>
+                        Khách lên đơn: <b>${p.orderedCustomers}</b><br>
+                        Doanh số: <b style="color:#10b981;">${p.totalSales.toLocaleString()} đ</b>
+                    </div>
+                `);
+            }
+        }).addTo(map);
+
+        if (kmlGeoJSON.features.length > 0) {
+            let bbox = turf.bbox(kmlGeoJSON);
+            map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+        }
+    }
+</script>
+</body>
+</html>
