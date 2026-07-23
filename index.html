@@ -144,7 +144,7 @@
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    // THUẬT TOÁN TÌM KIẾM MỚI (CHẠY 1 LẦN DUY NHẤT KHÔNG BỊ TREO)
+   // THUẬT TOÁN TÌM KIẾM MỚI (CHẠY 1 LẦN DUY NHẤT KHÔNG BỊ TREO)
     function buildRawCustomerRecordsFast(sheetData) {
         let areaSet = new Set();
         rawCustomerRecords = []; 
@@ -153,15 +153,22 @@
             let row = sheetData[index];
             if (!row || !row[5]) continue; 
             
+            // Lấy tên Area, nếu trong Excel để trống thì gán tạm là "Khác"
             let area = row[24] ? row[24].toString().trim() : "Khác";
+
+            // 🛑 CHỐT CHẶN Ở ĐÂY: Nếu Area là "Khác" (chữ hoa hay thường đều tính), bỏ qua dòng này luôn!
+            if (area.toLowerCase() === "khác") continue;
+
             let ma_kh = row[5] ? row[5].toString().trim() : "";
             let lat = parseFloat(row[22]); let lng = parseFloat(row[23]);
-            if (area) areaSet.add(area);
+            
+            // Chỉ những Area hợp lệ mới được add vào bộ lọc
+            areaSet.add(area);
 
             let matchedWard = null;
             if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                 let pt = turf.point([lng, lat]);
-                // RBUSH MAGIC: Tìm nhanh đa giác chỉ trong 0.0001s
+                // RBUSH MAGIC: Tìm nhanh đa giác
                 let candidates = spatialTree.search({ minX: lng, minY: lat, maxX: lng, maxY: lat });
                 
                 for (let item of candidates) {
@@ -171,6 +178,23 @@
                     }
                 }
             }
+
+            if (matchedWard) {
+                rawCustomerRecords.push({
+                    cusCode: ma_kh, area: area,
+                    province: matchedWard.COUNTRY || matchedWard.NAME_1 || "Chưa rõ", 
+                    district: matchedWard.NL_NAME_1 || matchedWard.NAME_2 || "Chưa rõ",
+                    ward: matchedWard.NAME_2 || matchedWard.VARNAME_3 || "Chưa rõ"
+                });
+            } else {
+                rawCustomerRecords.push({ cusCode: ma_kh, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
+            }
+        }
+
+        const selArea = document.getElementById('sel-area'); 
+        selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
+        [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
+    }
 
             if (matchedWard) {
                 rawCustomerRecords.push({
