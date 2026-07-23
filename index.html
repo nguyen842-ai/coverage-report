@@ -64,8 +64,9 @@
             color: var(--color-light-2); border: none; border-radius: 6px; 
             font-weight: bold; cursor: pointer; transition: background 0.3s;
             height: 36px; margin-top: 15px;
+            min-width: 150px;
         }
-        .btn-primary:hover { background-color: var(--color-primary); }
+        .btn-primary:hover:not(:disabled) { background-color: var(--color-primary); }
         .btn-primary:disabled { background-color: #4B5563; color: var(--text-muted); cursor: not-allowed; }
 
         #table-container { 
@@ -180,39 +181,32 @@
 
     async function initLoadAndProcess() {
         const btn = document.getElementById('btnRun');
-        btn.innerHTML = "⌛ Đang tải Sales & Map...";
         btn.disabled = true;
         
-        setTimeout(async () => {
-            try {
-                // 1. FETCH DATA SALES (dataM5, dataM6, dataM7) TỪ BUCKET 'data'
-                const salesFiles = ['dataM5.js', 'dataM6.js', 'dataM7.js'];
-                const { data: salesUrls, error: salesErr } = await supabaseClient
-                    .storage
-                    .from(DATA_BUCKET)
-                    .createSignedUrls(salesFiles, 60);
-
-                if (salesErr || !salesUrls) {
-                    console.warn("⚠️ Không lấy được link file Sales từ Bucket data:", salesErr);
-                } else {
-                    for (let item of salesUrls) {
-                        if (item.signedUrl) {
-                            let response = await fetch(item.signedUrl);
-                            let scriptText = await response.text();
-                            let scriptTag = document.createElement('script');
-                            scriptTag.text = scriptText;
-                            document.head.appendChild(scriptTag);
-                        }
+        try {
+            btn.innerHTML = "⌛ Đang tải dữ liệu...";
+            
+            // 1. FETCH SALES
+            const salesFiles = ['dataM5.js', 'dataM6.js', 'dataM7.js'];
+            const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(salesFiles, 60);
+            if (salesUrls) {
+                for (let item of salesUrls) {
+                    if (item.signedUrl) {
+                        let response = await fetch(item.signedUrl);
+                        let scriptText = await response.text();
+                        let scriptTag = document.createElement('script');
+                        scriptTag.text = scriptText;
+                        document.head.appendChild(scriptTag);
                     }
                 }
+            }
 
-                // 2. FETCH FILE GEOJSON
-                if (wardFeatures.length === 0) {
-                    const { data: geoUrl, error: geoErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([GEOJSON_FILE], 60);
-                    if (geoErr || !geoUrl || !geoUrl[0]) throw new Error(`Không tìm thấy file ${GEOJSON_FILE} ở mappingdata!`);
-
+            // 2. FETCH BẢN ĐỒ
+            if (wardFeatures.length === 0) {
+                btn.innerHTML = "⌛ Đang tải Map...";
+                const { data: geoUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([GEOJSON_FILE], 60);
+                if (geoUrl && geoUrl[0]) {
                     let resGeo = await fetch(geoUrl[0].signedUrl);
-                    if (!resGeo.ok) throw new Error(`Lỗi tải GeoJSON.`);
                     let masterGeoJSON = await resGeo.json();
                     
                     masterGeoJSON.features.forEach(f => {
@@ -221,95 +215,125 @@
                     });
                     populateProvinceFilter();
                 }
+            }
 
-                // 3. FETCH FILE EXCEL TUYẾN
-                const { data: excelUrl, error: exErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
-                if (exErr || !excelUrl || !excelUrl[0]) throw new Error("Lỗi kết nối file Excel tuyến.");
-
+            // 3. FETCH EXCEL
+            btn.innerHTML = "⌛ Đang tải Excel...";
+            const { data: excelUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
+            if (excelUrl && excelUrl[0]) {
                 let resExcel = await fetch(excelUrl[0].signedUrl);
                 let arrBuffer = await resExcel.arrayBuffer();
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                buildRawCustomerRecords(sheetData);
-                filterData();
+                // GỌI HÀM XỬ LÝ KHÔNG GIAN BẤT ĐỒNG BỘ (CHỐNG TREO MÁY)
+                await buildRawCustomerRecordsAsync(sheetData, (progressMsg) => {
+                    btn.innerHTML = progressMsg; 
+                });
 
-            } catch (error) {
-                console.error(error);
-                alert("❌ LỖI HỆ THỐNG: " + error.message);
-            } finally {
-                btn.innerHTML = "🔄 Nạp Dữ Liệu";
-                btn.disabled = false;
+                filterData();
             }
-        }, 100);
+
+        } catch (error) {
+            console.error(error);
+            alert("❌ LỖI HỆ THỐNG: " + error.message);
+        } finally {
+            btn.innerHTML = "🔄 Nạp Dữ Liệu";
+            btn.disabled = false;
+        }
     }
 
     function populateProvinceFilter() {
-        // CẬP NHẬT: Lấy Tỉnh từ trường COUNTRY
         let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    function buildRawCustomerRecords(sheetData) {
-        let areaSet = new Set();
-        rawCustomerRecords = []; 
+    // THUẬT TOÁN CHIA NHỎ DỮ LIỆU ĐỂ XỬ LÝ (CHỐNG TREO TRÌNH DUYỆT)
+    function buildRawCustomerRecordsAsync(sheetData, updateProgressFn) {
+        return new Promise((resolve) => {
+            let areaSet = new Set();
+            rawCustomerRecords = []; 
 
-        sheetData.forEach((row, idx) => {
-            if (idx === 0 || !row[5]) return; 
-            
-            let area = row[24] ? row[24].toString().trim() : "Khác";
-            let ma_kh = row[5] ? row[5].toString().trim() : "";
-            let lat = parseFloat(row[22]);
-            let lng = parseFloat(row[23]);
-            
-            if (area) areaSet.add(area);
+            let index = 1; 
+            let total = sheetData.length;
+            let chunkSize = 300; 
 
-            let matchedWard = null;
-            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-                let pt = turf.point([lng, lat]);
-                for (let f of wardFeatures) {
-                    const bbox = f._bbox;
-                    if (lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
-                        if (turf.booleanPointInPolygon(pt, f)) {
-                            matchedWard = f.properties;
-                            break; 
+            function processNextChunk() {
+                let end = Math.min(index + chunkSize, total);
+                
+                for (; index < end; index++) {
+                    let row = sheetData[index];
+                    if (!row || !row[5]) continue; 
+                    
+                    let area = row[24] ? row[24].toString().trim() : "Khác";
+                    let ma_kh = row[5] ? row[5].toString().trim() : "";
+                    let lat = parseFloat(row[22]);
+                    let lng = parseFloat(row[23]);
+                    
+                    if (area) areaSet.add(area);
+
+                    let matchedWard = null;
+                    if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                        let pt = turf.point([lng, lat]);
+                        for (let f of wardFeatures) {
+                            const bbox = f._bbox;
+                            if (lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
+                                if (turf.booleanPointInPolygon(pt, f)) {
+                                    matchedWard = f.properties;
+                                    break; 
+                                }
+                            }
                         }
                     }
+
+                    if (matchedWard) {
+                        rawCustomerRecords.push({
+                            cusCode: ma_kh,
+                            area: area,
+                            province: matchedWard.COUNTRY || "Chưa rõ", 
+                            district: matchedWard.NL_NAME_1 || "Chưa rõ",
+                            ward: matchedWard.NAME_2 || "Chưa rõ"
+                        });
+                    } else {
+                        rawCustomerRecords.push({
+                            cusCode: ma_kh, area: area,
+                            province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ"
+                        });
+                    }
+                }
+
+                if (index < total) {
+                    let percent = Math.round((index / total) * 100);
+                    updateProgressFn(`⌛ Đang phân tích: ${percent}%`);
+                    setTimeout(processNextChunk, 0); 
+                } else {
+                    const selArea = document.getElementById('sel-area');
+                    selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
+                    [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
+                    resolve();
                 }
             }
-
-            // CẬP NHẬT LOGIC LẤY TÊN THEO ĐÚNG Ý BẠN:
-            // Tỉnh = COUNTRY, Huyện = NL_NAME_1, Phường = NAME_2
-            if (matchedWard) {
-                rawCustomerRecords.push({
-                    cusCode: ma_kh,
-                    area: area,
-                    province: matchedWard.COUNTRY || "Chưa rõ", 
-                    district: matchedWard.NL_NAME_1 || "Chưa rõ",
-                    ward: matchedWard.NAME_2 || "Chưa rõ"
-                });
-            } else {
-                rawCustomerRecords.push({
-                    cusCode: ma_kh, area: area,
-                    province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ"
-                });
-            }
+            
+            processNextChunk();
         });
-
-        const selArea = document.getElementById('sel-area');
-        selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
-        [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
     }
 
     function processSalesDataAndAggregate() {
         const selectedMonth = document.getElementById('sel-month').value; 
-        const targetArrayName = 'dbSales' + selectedMonth;
-        const targetArray = window[targetArrayName] || [];
+        
+        let targetArray = [];
+        try {
+            if (selectedMonth === 'M7' && typeof dbSalesM7 !== 'undefined') targetArray = dbSalesM7;
+            else if (selectedMonth === 'M6' && typeof dbSalesM6 !== 'undefined') targetArray = dbSalesM6;
+            else if (selectedMonth === 'M5' && typeof dbSalesM5 !== 'undefined') targetArray = dbSalesM5;
+        } catch (e) {
+            console.warn("Đang chờ nạp mảng doanh số...");
+        }
 
         let salesDictionary = {};
-        if (Array.isArray(targetArray)) {
+        if (Array.isArray(targetArray) && targetArray.length > 0) {
             targetArray.forEach(line => {
                 if (line && line.cusCode) {
                     let cleanDbCode = parseInt(line.cusCode, 10);
@@ -398,7 +422,6 @@
         });
         renderTableRows(displayTableData);
 
-        // CẬP NHẬT: So sánh Tỉnh và Huyện bằng COUNTRY và NL_NAME_1
         let mapFeatures = wardFeatures.filter(f => {
             let p = f.properties;
             if (selectedProvince && p.COUNTRY !== selectedProvince) return false;
@@ -495,7 +518,6 @@
             },
             onEachFeature: function (feature, layer) {
                 let p = feature.properties;
-                // CẬP NHẬT: Hiển thị đúng biến NL_NAME_1 (Quận) và COUNTRY (Tỉnh) trên bản đồ
                 layer.bindPopup(`
                     <div style="font-size:12px; line-height: 1.6;">
                         <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NL_NAME_1}</b><br>
