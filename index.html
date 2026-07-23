@@ -110,7 +110,6 @@
             <h2>📊 BÁO CÁO COVERAGE - CẤP QUẬN HUYỆN</h2>
             
             <div class="filter-group">
-                <!-- THÊM BỘ LỌC THÁNG ĐỂ TÁCH DATA -->
                 <div class="filter-item">
                     <label>Chọn Tháng Doanh Số</label>
                     <select id="sel-month" onchange="filterData()">
@@ -165,7 +164,6 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
-    // CẤU HÌNH 2 BUCKET RIÊNG BIỆT 
     const MAP_BUCKET = 'mappingdata';
     const DATA_BUCKET = 'data';
     
@@ -178,8 +176,6 @@
 
     let wardFeatures = []; 
     let geoJsonLayer = null;
-    
-    // Biến lưu trữ bản ghi thô (chưa tính doanh số) để tái sử dụng khi người dùng đổi bộ lọc tháng
     let rawCustomerRecords = []; 
 
     async function initLoadAndProcess() {
@@ -189,13 +185,11 @@
         
         setTimeout(async () => {
             try {
-                // ==========================================
                 // 1. FETCH DATA SALES (dataM5, dataM6, dataM7) TỪ BUCKET 'data'
-                // ==========================================
                 const salesFiles = ['dataM5.js', 'dataM6.js', 'dataM7.js'];
                 const { data: salesUrls, error: salesErr } = await supabaseClient
                     .storage
-                    .from(DATA_BUCKET) // <-- Sử dụng đúng bucket DATA
+                    .from(DATA_BUCKET)
                     .createSignedUrls(salesFiles, 60);
 
                 if (salesErr || !salesUrls) {
@@ -205,7 +199,6 @@
                         if (item.signedUrl) {
                             let response = await fetch(item.signedUrl);
                             let scriptText = await response.text();
-                            // Chèn động script vào trình duyệt để window nhận diện dbSalesM7...
                             let scriptTag = document.createElement('script');
                             scriptTag.text = scriptText;
                             document.head.appendChild(scriptTag);
@@ -213,9 +206,7 @@
                     }
                 }
 
-                // ==========================================
-                // 2. FETCH FILE GEOJSON (BUCKET mappingdata)
-                // ==========================================
+                // 2. FETCH FILE GEOJSON
                 if (wardFeatures.length === 0) {
                     const { data: geoUrl, error: geoErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([GEOJSON_FILE], 60);
                     if (geoErr || !geoUrl || !geoUrl[0]) throw new Error(`Không tìm thấy file ${GEOJSON_FILE} ở mappingdata!`);
@@ -231,9 +222,7 @@
                     populateProvinceFilter();
                 }
 
-                // ==========================================
-                // 3. FETCH FILE EXCEL TUYẾN (BUCKET mappingdata)
-                // ==========================================
+                // 3. FETCH FILE EXCEL TUYẾN
                 const { data: excelUrl, error: exErr } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
                 if (exErr || !excelUrl || !excelUrl[0]) throw new Error("Lỗi kết nối file Excel tuyến.");
 
@@ -242,10 +231,7 @@
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                // XỬ LÝ KHÔNG GIAN BƯỚC ĐẦU (Chưa gán doanh số, chỉ map khách với phường/xã)
                 buildRawCustomerRecords(sheetData);
-
-                // Cuối cùng: Kích hoạt bộ lọc để tự động tính doanh số theo Tháng đang chọn
                 filterData();
 
             } catch (error) {
@@ -259,16 +245,16 @@
     }
 
     function populateProvinceFilter() {
-        let provinces = [...new Set(wardFeatures.map(f => f.properties.NAME_1))].filter(Boolean).sort();
+        // CẬP NHẬT: Lấy Tỉnh từ trường COUNTRY
+        let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province');
         sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    // Hàm này chỉ chạy 1 lần khi load Excel, quét tọa độ và phân vùng hành chính
     function buildRawCustomerRecords(sheetData) {
         let areaSet = new Set();
-        rawCustomerRecords = []; // Reset dữ liệu gốc
+        rawCustomerRecords = []; 
 
         sheetData.forEach((row, idx) => {
             if (idx === 0 || !row[5]) return; 
@@ -294,13 +280,15 @@
                 }
             }
 
+            // CẬP NHẬT LOGIC LẤY TÊN THEO ĐÚNG Ý BẠN:
+            // Tỉnh = COUNTRY, Huyện = NL_NAME_1, Phường = NAME_2
             if (matchedWard) {
                 rawCustomerRecords.push({
                     cusCode: ma_kh,
                     area: area,
-                    province: matchedWard.NAME_1 || "Chưa rõ", 
-                    district: matchedWard.NAME_2 || "Chưa rõ",
-                    ward: matchedWard.NAME_3 || matchedWard.VARNAME_3 || "Chưa rõ"
+                    province: matchedWard.COUNTRY || "Chưa rõ", 
+                    district: matchedWard.NL_NAME_1 || "Chưa rõ",
+                    ward: matchedWard.NAME_2 || "Chưa rõ"
                 });
             } else {
                 rawCustomerRecords.push({
@@ -310,19 +298,16 @@
             }
         });
 
-        // Đổ danh sách Area vào bộ lọc
         const selArea = document.getElementById('sel-area');
         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
         [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
     }
 
-    // HÀM TÍNH TOÁN CỐT LÕI: Gắn Doanh Số Tốc Độ Cao Bằng Lookup Dictionary
     function processSalesDataAndAggregate() {
-        const selectedMonth = document.getElementById('sel-month').value; // M5, M6, or M7
+        const selectedMonth = document.getElementById('sel-month').value; 
         const targetArrayName = 'dbSales' + selectedMonth;
         const targetArray = window[targetArrayName] || [];
 
-        // 1. Xây dựng Dictionary Doanh Số để tra cứu O(1)
         let salesDictionary = {};
         if (Array.isArray(targetArray)) {
             targetArray.forEach(line => {
@@ -335,7 +320,6 @@
             });
         }
 
-        // 2. Gom nhóm Phân Cấp (Hierarchical Aggregation) kết hợp Dictionary Doanh Số
         let districtGroups = {};
         
         rawCustomerRecords.forEach(r => {
@@ -359,17 +343,14 @@
                 };
             }
 
-            // Ghi nhận khách hàng lên tuyến
             districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
             districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
 
-            // Tra cứu doanh số thực từ Dictionary
             let cleanCusCode = parseInt(r.cusCode, 10);
             let cusSales = salesDictionary[cleanCusCode] || 0;
             let isOrdered = cusSales > 0;
 
             if (isOrdered) {
-                // Nếu khách có đơn trong tháng này, add vào Set để không bị tính trùng
                 if (!districtGroups[distKey].cusOrderedSet.has(r.cusCode)) {
                     districtGroups[distKey].cusOrderedSet.add(r.cusCode);
                     districtGroups[distKey].revenue += cusSales;
@@ -382,7 +363,6 @@
             }
         });
 
-        // 3. Format lại mảng trả về
         return Object.values(districtGroups).map(d => {
             let wardArr = Object.values(d.wards).map(w => {
                 return {
@@ -403,17 +383,14 @@
         });
     }
 
-    // HÀM LỌC CHÍNH ĐƯỢC GỌI KHI NGƯỜI DÙNG ĐỔI BỘ LỌC (Tháng, Tỉnh, Area)
     function filterData() {
-        if (rawCustomerRecords.length === 0) return; // Chưa nạp dữ liệu thì bỏ qua
+        if (rawCustomerRecords.length === 0) return; 
 
-        // Tái tính toán doanh số dựa trên tháng vừa chọn
         let aggregatedData = processSalesDataAndAggregate();
 
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        // Lọc hiển thị Bảng
         let displayTableData = aggregatedData.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
@@ -421,12 +398,12 @@
         });
         renderTableRows(displayTableData);
 
-        // Lọc hiển thị Map
+        // CẬP NHẬT: So sánh Tỉnh và Huyện bằng COUNTRY và NL_NAME_1
         let mapFeatures = wardFeatures.filter(f => {
             let p = f.properties;
-            if (selectedProvince && p.NAME_1 !== selectedProvince) return false;
+            if (selectedProvince && p.COUNTRY !== selectedProvince) return false;
             
-            let matchData = aggregatedData.find(d => d.province === p.NAME_1 && d.district === p.NAME_2);
+            let matchData = aggregatedData.find(d => d.province === p.COUNTRY && d.district === p.NL_NAME_1);
             p._mapOnRoute = matchData ? matchData.onRoute : 0;
             p._mapOrdered = matchData ? matchData.ordered : 0;
             p._mapRevenue = matchData ? matchData.revenue : 0;
@@ -518,10 +495,11 @@
             },
             onEachFeature: function (feature, layer) {
                 let p = feature.properties;
+                // CẬP NHẬT: Hiển thị đúng biến NL_NAME_1 (Quận) và COUNTRY (Tỉnh) trên bản đồ
                 layer.bindPopup(`
                     <div style="font-size:12px; line-height: 1.6;">
-                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NAME_2}</b><br>
-                        Tỉnh: <b>${p.NAME_1}</b><br>
+                        <b style="color:var(--color-light-1); font-size:14px;">Quận/Huyện: ${p.NL_NAME_1}</b><br>
+                        Tỉnh: <b>${p.COUNTRY}</b><br>
                         <hr style="border-color:#4b5563; margin:5px 0;">
                         Khách trên tuyến: <b>${p._mapOnRoute}</b><br>
                         Khách lên đơn: <b>${p._mapOrdered}</b><br>
