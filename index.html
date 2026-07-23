@@ -3,53 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - RBush Siêu Tốc (Light Mode)</title>
+    <title>Báo Cáo Coverage - Web Worker Tối Ưu (Light Mode)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    
-    <!-- THÊM VŨ KHÍ BÍ MẬT: THƯ VIỆN RBUSH ĐỂ TÌM KIẾM KHÔNG GIAN SIÊU TỐC -->
-    <script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
 
     <style>
         :root {
-            var(--bg-main): #F3F6F9; var(--bg-panel): #FFFFFF;
-            var(--color-primary): #ea580c; var(--text-main): #1e293b; 
-            var(--text-muted): #64748b; var(--border-color): #cbd5e1;
+            --bg-main: #F3F6F9; 
+            --bg-panel: #FFFFFF;
+            --color-primary: #ea580c; 
+            --text-main: #1e293b; 
+            --text-muted: #64748b; 
+            --border-color: #cbd5e1;
         }
-        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #F3F6F9; color: #1e293b; font-size: 13px; overflow: hidden; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 13px; overflow: hidden; }
         #app-container { display: flex; height: 100vh; width: 100%; }
-        #report-panel { width: 70%; height: 100%; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; background: #F3F6F9; }
-        .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #cbd5e1; padding-bottom: 15px; flex-wrap: wrap; gap: 15px; }
-        .header-section h2 { margin: 0; color: #ea580c; font-size: 18px; font-weight: 800; }
+        #report-panel { width: 70%; height: 100%; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; background: var(--bg-main); }
+        .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; flex-wrap: wrap; gap: 15px; }
+        .header-section h2 { margin: 0; color: var(--color-primary); font-size: 18px; font-weight: 800; }
         .filter-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .filter-item { display: flex; flex-direction: column; gap: 4px; }
-        .filter-item label { font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; }
-        select { background: #FFFFFF; color: #1e293b; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; outline: none; font-size: 13px; min-width: 120px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-        .btn-primary { padding: 10px 16px; background-color: #ea580c; color: #ffffff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; height: 36px; margin-top: 15px; min-width: 150px; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3); }
+        .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; }
+        select { background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 6px; outline: none; font-size: 13px; min-width: 120px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .btn-primary { padding: 10px 16px; background-color: var(--color-primary); color: #ffffff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; height: 36px; margin-top: 15px; min-width: 150px; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3); transition: background 0.3s; }
         .btn-primary:hover:not(:disabled) { background-color: #c2410c; }
-        .btn-primary:disabled { background-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
-        #table-container { flex-grow: 1; overflow-y: auto; background: #FFFFFF; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .btn-primary:disabled { background-color: var(--border-color); color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        #table-container { flex-grow: 1; overflow-y: auto; background: var(--bg-panel); border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th, td { padding: 12px 14px; border-bottom: 1px solid #cbd5e1; }
-        th { background-color: #1e293b; color: #ffffff; position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase; }
+        th, td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
+        th { background-color: var(--text-main); color: #ffffff; position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase; }
         .district-row { cursor: pointer; transition: background 0.2s; font-weight: 500; }
         .district-row:hover { background-color: #f1f5f9; }
-        .district-row .toggle-icon { display: inline-block; width: 16px; color: #ea580c; font-weight: bold; }
+        .district-row .toggle-icon { display: inline-block; width: 16px; color: var(--color-primary); font-weight: bold; }
         .ward-row { display: none; background-color: #f8fafc; font-size: 12px; }
         .ward-row.show { display: table-row; }
         .ward-row td { border-bottom: 1px dashed #e2e8f0; color: #475569; }
         .num-right { text-align: right; font-weight: bold; }
         .text-green { color: #059669; }
-        .text-orange { color: #ea580c; }
-        #map-panel { width: 30%; height: 100%; position: relative; border-left: 1px solid #cbd5e1; }
+        .text-orange { color: var(--color-primary); }
+        #map-panel { width: 30%; height: 100%; position: relative; border-left: 1px solid var(--border-color); }
         #map { width: 100%; height: 100%; background: #e5e7eb; } 
-        .leaflet-popup-content-wrapper { background: #ffffff !important; color: #1e293b !important; border: 1px solid #cbd5e1; font-family: 'Segoe UI', Tahoma, sans-serif; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .leaflet-popup-content-wrapper { background: #ffffff !important; color: var(--text-main) !important; border: 1px solid var(--border-color); font-family: 'Segoe UI', Tahoma, sans-serif; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .leaflet-popup-tip { background: #ffffff !important; }
-        #map-loader { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(255, 255, 255, 0.9); color: #ea580c; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: 1px solid #fdba74; }
+        #map-loader { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(255, 255, 255, 0.9); color: var(--color-primary); padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: 1px solid #fdba74; }
     </style>
 </head>
 <body>
@@ -61,7 +61,11 @@
             <div class="filter-group">
                 <div class="filter-item">
                     <label>Tháng</label>
-                    <select id="sel-month" onchange="runFilter()"><option value="M7" selected>M7</option><option value="M6">M6</option><option value="M5">M5</option></select>
+                    <select id="sel-month" onchange="runFilter()">
+                        <option value="M7" selected>M7</option>
+                        <option value="M6">M6</option>
+                        <option value="M5">M5</option>
+                    </select>
                 </div>
                 <div class="filter-item"><label>Khu vực</label><select id="sel-area" onchange="runFilter()"><option value="">-- Tất cả --</option></select></div>
                 <div class="filter-item"><label>Tỉnh Thành</label><select id="sel-province" onchange="runFilter()"><option value="">-- Tất cả --</option></select></div>
@@ -71,7 +75,7 @@
         <div id="table-container">
             <table id="summary-table">
                 <thead><tr><th>Area</th><th>Tỉnh / TP</th><th>Quận / Huyện</th><th>Phường / Xã</th><th class="num-right">Khách Tuyến</th><th class="num-right">Lên Đơn</th><th class="num-right">Doanh Số</th></tr></thead>
-                <tbody id="summary-body"><tr><td colspan="7" style="text-align: center; color: #64748b; padding: 40px;">Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Bản đồ.</td></tr></tbody>
+                <tbody id="summary-body"><tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Bản đồ.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -92,10 +96,94 @@
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let wardFeatures = []; 
-    let spatialTree = new RBush(); // CÂY TÌM KIẾM KHÔNG GIAN
     let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let rawCustomerRecords = []; 
     let currentAggregatedData = []; let activeDistrictName = null; 
+
+    // CODE CHO NHÂN VIÊN ẢO (WEB WORKER) CÓ THUẬT TOÁN CỨU NÉT
+    const workerCode = `
+        importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
+
+        self.onmessage = function(e) {
+            const { sheetData, wardFeatures } = e.data;
+            let areaSet = new Set();
+            let rawCustomerRecords = [];
+
+            self.postMessage({ type: 'progress', msg: '⌛ Đang dựng Cây Không Gian...' });
+            
+            let spatialTree = new RBush();
+            let treeItems = [];
+            wardFeatures.forEach(f => {
+                let box = turf.bbox(f);
+                f._bbox = box;
+                treeItems.push({ minX: box[0], minY: box[1], maxX: box[2], maxY: box[3], feature: f });
+            });
+            spatialTree.load(treeItems);
+
+            self.postMessage({ type: 'progress', msg: '⌛ Đang quy chiếu tọa độ...' });
+            
+            let total = sheetData.length;
+            for (let index = 1; index < total; index++) {
+                let row = sheetData[index];
+                if (!row || !row[5]) continue; 
+                
+                let area = row[24] ? row[24].toString().trim() : "Khác";
+                if (area.toLowerCase() === "khác") continue; 
+
+                let ma_kh = row[5] ? row[5].toString().trim() : "";
+                let lat = parseFloat(row[22]); let lng = parseFloat(row[23]);
+                
+                areaSet.add(area);
+                let matchedWard = null;
+
+                if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                    let pt = turf.point([lng, lat]);
+                    let candidates = spatialTree.search({ minX: lng, minY: lat, maxX: lng, maxY: lat });
+                    
+                    for (let item of candidates) {
+                        if (turf.booleanPointInPolygon(pt, item.feature)) {
+                            matchedWard = item.feature.properties;
+                            break; 
+                        }
+                    }
+
+                    // CỨU NÉT (Tolerance Fallback)
+                    if (!matchedWard && candidates.length > 0) {
+                        let closestDist = Infinity;
+                        for (let item of candidates) {
+                            let center = turf.centerOfMass(item.feature);
+                            let dist = turf.distance(pt, center);
+                            if (dist < closestDist) {
+                                closestDist = dist;
+                                matchedWard = item.feature.properties;
+                            }
+                        }
+                    }
+                }
+
+                if (matchedWard) {
+                    rawCustomerRecords.push({
+                        cusCode: ma_kh, area: area,
+                        province: matchedWard.COUNTRY || matchedWard.NAME_1 || "Chưa rõ", 
+                        district: matchedWard.NL_NAME_1 || matchedWard.NAME_2 || "Chưa rõ",
+                        ward: matchedWard.NAME_2 || matchedWard.VARNAME_3 || "Chưa rõ"
+                    });
+                } else {
+                    rawCustomerRecords.push({ cusCode: ma_kh, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
+                }
+
+                if (index % 500 === 0) {
+                    self.postMessage({ type: 'progress', msg: \`⌛ Đang xử lý: \${Math.round((index / total) * 100)}%\` });
+                }
+            }
+
+            self.postMessage({
+                type: 'done',
+                rawCustomerRecords: rawCustomerRecords,
+                areas: Array.from(areaSet)
+            });
+        };
+    `;
 
     async function fetchSupabaseGeoJSON(fileName) {
         const { data: urlData } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
@@ -110,83 +198,58 @@
             for (let item of salesUrls) { if(item.signedUrl) { let res = await fetch(item.signedUrl); let s = document.createElement('script'); s.text = await res.text(); document.head.appendChild(s); } }
 
             if (wardFeatures.length === 0) {
-                btn.innerHTML = "⌛ Đang khởi tạo Cây Không Gian (RBush)...";
+                btn.innerHTML = "⌛ Đang tải hệ tọa độ...";
                 let masterGeoJSON = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
-                let treeItems = [];
-                masterGeoJSON.features.forEach(f => {
-                    let box = turf.bbox(f);
-                    f._bbox = box; 
-                    wardFeatures.push(f);
-                    treeItems.push({ minX: box[0], minY: box[1], maxX: box[2], maxY: box[3], feature: f });
-                });
-                spatialTree.load(treeItems);
+                masterGeoJSON.features.forEach(f => wardFeatures.push(f));
                 populateProvinceFilter();
             }
 
-            btn.innerHTML = "⌛ Đang đọc tuyến...";
+            btn.innerHTML = "⌛ Đang đọc file Excel...";
             const { data: excelUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
             let resExcel = await fetch(excelUrl[0].signedUrl);
             let arrBuffer = await resExcel.arrayBuffer();
             let workbook = XLSX.read(arrBuffer, { type: 'array' });
             let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-            btn.innerHTML = "⌛ Đang đối chiếu tọa độ (Siêu tốc)...";
-            buildRawCustomerRecordsFast(sheetData);
+            // GIAO VIỆC CHO WEB WORKER CHẠY NGẦM
+            await new Promise((resolve, reject) => {
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const worker = new Worker(URL.createObjectURL(blob));
+
+                worker.onmessage = function(e) {
+                    if (e.data.type === 'progress') {
+                        btn.innerHTML = e.data.msg;
+                    } else if (e.data.type === 'done') {
+                        rawCustomerRecords = e.data.rawCustomerRecords;
+                        const selArea = document.getElementById('sel-area'); 
+                        selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
+                        e.data.areas.sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
+                        worker.terminate(); 
+                        resolve();
+                    }
+                };
+                
+                worker.onerror = function(err) {
+                    worker.terminate();
+                    reject(new Error("Lỗi luồng xử lý ngầm: " + err.message));
+                };
+
+                worker.postMessage({ sheetData: sheetData, wardFeatures: wardFeatures });
+            });
+
             runFilter(); 
-        } catch (error) { alert("❌ LỖI HỆ THỐNG: " + error.message); } finally { btn.innerHTML = "🔄 Nạp Dữ Liệu"; btn.disabled = false; }
+        } catch (error) { 
+            console.error(error);
+            alert("❌ LỖI HỆ THỐNG: " + error.message); 
+        } finally { 
+            btn.innerHTML = "🔄 Nạp Dữ Liệu"; btn.disabled = false; 
+        }
     }
 
     function populateProvinceFilter() {
         let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY || f.properties.NAME_1))].filter(Boolean).sort();
         const sel = document.getElementById('sel-province'); sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
-    }
-
-    function buildRawCustomerRecordsFast(sheetData) {
-        let areaSet = new Set();
-        rawCustomerRecords = []; 
-        
-        for (let index = 1; index < sheetData.length; index++) {
-            let row = sheetData[index];
-            if (!row || !row[5]) continue; 
-            
-            let area = row[24] ? row[24].toString().trim() : "Khác";
-
-            // Bỏ qua tuyến Khác
-            if (area.toLowerCase() === "khác") continue;
-
-            let ma_kh = row[5] ? row[5].toString().trim() : "";
-            let lat = parseFloat(row[22]); let lng = parseFloat(row[23]);
-            
-            areaSet.add(area);
-
-            let matchedWard = null;
-            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-                let pt = turf.point([lng, lat]);
-                let candidates = spatialTree.search({ minX: lng, minY: lat, maxX: lng, maxY: lat });
-                
-                for (let item of candidates) {
-                    if (turf.booleanPointInPolygon(pt, item.feature)) {
-                        matchedWard = item.feature.properties;
-                        break; 
-                    }
-                }
-            }
-
-            if (matchedWard) {
-                rawCustomerRecords.push({
-                    cusCode: ma_kh, area: area,
-                    province: matchedWard.COUNTRY || matchedWard.NAME_1 || "Chưa rõ", 
-                    district: matchedWard.NL_NAME_1 || matchedWard.NAME_2 || "Chưa rõ",
-                    ward: matchedWard.NAME_2 || matchedWard.VARNAME_3 || "Chưa rõ"
-                });
-            } else {
-                rawCustomerRecords.push({ cusCode: ma_kh, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
-            }
-        }
-
-        const selArea = document.getElementById('sel-area'); selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
-        [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
     }
 
     function processSalesDataAndAggregate() {
@@ -198,11 +261,14 @@
             else if (selectedMonth === 'M5' && typeof dbSalesM5 !== 'undefined') targetArray = dbSalesM5;
         } catch (e) { }
 
+        // 1. TẠO TỪ ĐIỂN DOANH SỐ (Thuần khiết 100%)
         let salesDict = {};
         if (targetArray.length > 0) {
             targetArray.forEach(line => {
-                let cleanDbCode = parseInt(line.cusCode, 10);
-                if (!isNaN(cleanDbCode)) salesDict[cleanDbCode] = (salesDict[cleanDbCode] || 0) + (parseFloat(line.sales) || 0);
+                if (line && line.cusCode) {
+                    let exactCode = String(line.cusCode).trim();
+                    salesDict[exactCode] = (salesDict[exactCode] || 0) + (parseFloat(line.sales) || 0);
+                }
             });
         }
 
@@ -214,13 +280,23 @@
             let wardKey = r.ward;
             if (!districtGroups[distKey].wards[wardKey]) districtGroups[distKey].wards[wardKey] = { wardName: r.ward, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0 };
 
-            districtGroups[distKey].cusOnRouteSet.add(r.cusCode);
-            districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(r.cusCode);
+            let exactExcelCode = String(r.cusCode).trim();
 
-            let cleanCusCode = parseInt(r.cusCode, 10); let cusSales = salesDict[cleanCusCode] || 0;
+            districtGroups[distKey].cusOnRouteSet.add(exactExcelCode);
+            districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(exactExcelCode);
+
+            // 2. KHỚP MÃ DOANH SỐ 1:1
+            let cusSales = salesDict[exactExcelCode] || 0;
+            
             if (cusSales > 0) {
-                if (!districtGroups[distKey].cusOrderedSet.has(r.cusCode)) { districtGroups[distKey].cusOrderedSet.add(r.cusCode); districtGroups[distKey].revenue += cusSales; }
-                if (!districtGroups[distKey].wards[wardKey].cusOrderedSet.has(r.cusCode)) { districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode); districtGroups[distKey].wards[wardKey].revenue += cusSales; }
+                if (!districtGroups[distKey].cusOrderedSet.has(exactExcelCode)) { 
+                    districtGroups[distKey].cusOrderedSet.add(exactExcelCode); 
+                    districtGroups[distKey].revenue += cusSales; 
+                }
+                if (!districtGroups[distKey].wards[wardKey].cusOrderedSet.has(exactExcelCode)) { 
+                    districtGroups[distKey].wards[wardKey].cusOrderedSet.add(exactExcelCode); 
+                    districtGroups[distKey].wards[wardKey].revenue += cusSales; 
+                }
             }
         });
 
@@ -252,8 +328,8 @@
         if (rowsData.length === 0) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>'; return; }
         rowsData.sort((a, b) => b.revenue - a.revenue).forEach((p, index) => {
             let distId = `dist_${index}`; 
-            tbody.innerHTML += `<tr class="district-row" onclick="toggleWards('${distId}', '${p.district}')"><td style="color:#64748b;">${p.area}</td><td>${p.province}</td><td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td><td style="color:#64748b;">-- Tổng Hợp --</td><td class="num-right">${p.onRoute.toLocaleString()}</td><td class="num-right text-orange">${p.ordered.toLocaleString()}</td><td class="num-right text-green">${p.revenue.toLocaleString()} đ</td></tr>`;
-            p.wardsData.forEach(w => { tbody.innerHTML += `<tr class="ward-row ward-row-${distId}"><td></td><td></td><td style="text-align:right; color:#cbd5e1;">↳</td><td>${w.wardName}</td><td class="num-right" style="color:#64748b;">${w.onRoute.toLocaleString()}</td><td class="num-right" style="color:#ea580c;">${w.ordered.toLocaleString()}</td><td class="num-right" style="color:#059669;">${w.revenue.toLocaleString()} đ</td></tr>`; });
+            tbody.innerHTML += `<tr class="district-row" onclick="toggleWards('${distId}', '${p.district}')"><td style="color:var(--text-muted);">${p.area}</td><td>${p.province}</td><td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td><td style="color:var(--text-muted);">-- Tổng Hợp --</td><td class="num-right">${p.onRoute.toLocaleString()}</td><td class="num-right text-orange">${p.ordered.toLocaleString()}</td><td class="num-right text-green">${p.revenue.toLocaleString()} đ</td></tr>`;
+            p.wardsData.forEach(w => { tbody.innerHTML += `<tr class="ward-row ward-row-${distId}"><td></td><td></td><td style="text-align:right; color:var(--border-color);">↳</td><td>${w.wardName}</td><td class="num-right" style="color:var(--text-muted);">${w.onRoute.toLocaleString()}</td><td class="num-right" style="color:var(--color-primary);">${w.ordered.toLocaleString()}</td><td class="num-right" style="color:#059669;">${w.revenue.toLocaleString()} đ</td></tr>`; });
         });
     }
 
@@ -266,7 +342,7 @@
                     let wardName = f.properties.NAME_2 || f.properties.VARNAME_3 || "Chưa rõ";
                     let distData = currentAggregatedData.find(d => d.province === selectedProvince && d.district === activeDistrictName);
                     let matchData = distData ? distData.wardsData.find(w => w.wardName === wardName) : null;
-                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:#64748b;'>Phường/Xã:</span> <span style='font-size:14px; font-weight:bold;'>${wardName}</span><br>Thuộc ${activeDistrictName}`;
+                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Phường/Xã:</span> <span style='font-size:14px; font-weight:bold;'>${wardName}</span><br>Thuộc ${activeDistrictName}`;
                     return f;
                 });
                 renderMapLayer(mapFeatures);
@@ -275,7 +351,7 @@
                 let mapFeatures = districtGeoData.features.filter(f => (f.properties.NAME_1||f.properties.COUNTRY) === selectedProvince).map(f => {
                     let distName = f.properties.NAME_2 || f.properties.NL_NAME_1; let provName = f.properties.NAME_1 || f.properties.COUNTRY;
                     let matchData = currentAggregatedData.find(d => d.province === provName && d.district === distName);
-                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:#64748b;'>Quận/Huyện:</span> <span style='font-size:14px; font-weight:bold;'>${distName}</span>`;
+                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Quận/Huyện:</span> <span style='font-size:14px; font-weight:bold;'>${distName}</span>`;
                     return f;
                 });
                 renderMapLayer(mapFeatures);
@@ -289,7 +365,7 @@
                 });
                 let mapFeatures = provinceGeoData.features.map(f => {
                     let provName = f.properties.NAME_1 || f.properties.COUNTRY; let match = provAgg[provName];
-                    f.properties._mapOnRoute = match ? match.onRoute : 0; f.properties._mapOrdered = match ? match.ordered : 0; f.properties._mapRevenue = match ? match.revenue : 0; f.properties._mapLabel = `<span style='color:#64748b;'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
+                    f.properties._mapOnRoute = match ? match.onRoute : 0; f.properties._mapOrdered = match ? match.ordered : 0; f.properties._mapRevenue = match ? match.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
                     return f;
                 }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true);
                 renderMapLayer(mapFeatures);
@@ -304,7 +380,7 @@
         let displayCollection = turf.featureCollection(featuresList);
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (f) { return { fillColor: mapColorScale(f.properties._mapRevenue), weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.65 }; },
-            onEachFeature: function (f, layer) { layer.bindPopup(`<div style="font-size:12px; line-height:1.6;">${f.properties._mapLabel}<hr style="border-color:#e2e8f0; margin:6px 0;">Khách tuyến: <b>${f.properties._mapOnRoute.toLocaleString()}</b><br>Lên đơn: <b style="color:#ea580c;">${f.properties._mapOrdered.toLocaleString()}</b><br>Doanh số: <b style="color:#059669; font-size:13px;">${f.properties._mapRevenue.toLocaleString()} đ</b></div>`); }
+            onEachFeature: function (f, layer) { layer.bindPopup(`<div style="font-size:12px; line-height:1.6;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:6px 0;">Khách tuyến: <b>${f.properties._mapOnRoute.toLocaleString()}</b><br>Lên đơn: <b style="color:var(--color-primary);">${f.properties._mapOrdered.toLocaleString()}</b><br>Doanh số: <b style="color:#059669; font-size:13px;">${f.properties._mapRevenue.toLocaleString()} đ</b></div>`); }
         }).addTo(map);
         if (featuresList.length > 0) map.fitBounds([[turf.bbox(displayCollection)[1], turf.bbox(displayCollection)[0]], [turf.bbox(displayCollection)[3], turf.bbox(displayCollection)[2]]], { padding: [20, 20], maxZoom: 13 });
     }
