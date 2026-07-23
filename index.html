@@ -140,7 +140,6 @@
                     <label>Tỉnh Thành (COUNTRY từ JSON)</label>
                     <select id="sel-province" onchange="filterData()"><option value="">-- Tất cả Tỉnh --</option></select>
                 </div>
-                <!-- Nút nạp dữ liệu theo yêu cầu -->
                 <button id="btnRun" class="btn-primary" onclick="initLoadAndProcess()">🔄 Nạp Dữ Liệu</button>
             </div>
         </div>
@@ -183,7 +182,6 @@
     const FILE_ROUTE = 'tuyen.xlsx'; 
     const GEOJSON_FILE = 'gadm41_VNM_3.json'; 
 
-    // Khởi tạo bản đồ nền tối
     const map = L.map('map', { zoomControl: false }).setView([10.8231, 106.6297], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
@@ -192,9 +190,6 @@
     let allProcessedRows = []; 
     let geoJsonLayer = null;
 
-    // Giả lập mảng chứa doanh số từ các file dataM5 -> dataM7.js nạp vào window toàn cục
-    // window.dbSalesM7 = [ { month: "Jul", cusCode: "02001691", sales: 2163148 }, ... ]
-
     async function initLoadAndProcess() {
         const btn = document.getElementById('btnRun');
         btn.innerHTML = "⌛ Đang nạp dữ liệu...";
@@ -202,7 +197,6 @@
         
         setTimeout(async () => {
             try {
-                // 1. Tải và cấu trúc hóa file ranh giới GeoJSON từ Supabase Storage
                 if (!masterGeoJSON) {
                     const { data: geoUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([GEOJSON_FILE], 60);
                     let resGeo = await fetch(geoUrl[0].signedUrl);
@@ -210,7 +204,7 @@
                     
                     masterGeoJSON.features.forEach(f => {
                         let p = f.properties;
-                        f._bbox = turf.bbox(f); // Tạo sẵn BBox tăng tốc độ quét điểm chống sập trang
+                        f._bbox = turf.bbox(f); 
 
                         if (p.name && p.name.startsWith("VNM")) {
                             f.properties._level = "phuong_xa";
@@ -230,15 +224,14 @@
                     populateProvinceFilter();
                 }
 
-                // 2. Đọc file tuyến.xlsx hành trình
                 const { data: excelUrl } = await supabaseClient.storage.from(BUCKET_NAME).createSignedUrls([FILE_ROUTE], 60);
                 let resExcel = await fetch(excelUrl[0].signedUrl);
                 let arrBuffer = await resExcel.arrayBuffer();
                 let workbook = XLSX.read(arrBuffer, { type: 'array' });
                 let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-                // 3. Tiến hành phân tích dữ liệu không gian kết hợp tính toán mảng doanh số thật
-                processAndAnalyze(sheetData);
+                // Đã đổi lại gọi đúng tên hàm xử lý dữ liệu
+                processExcelData(sheetData);
 
             } catch (error) {
                 console.error(error);
@@ -257,16 +250,13 @@
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    // --- HÀM TÍNH TOÁN DOANH SỐ TỪ MẢNG GIAO DỊCH (DISTINCT COUNT & SUM SALES) ---
     function getCustomerSalesSummary(cusCode) {
         let totalSales = 0;
         let isOrdered = false;
 
-        // Ưu tiên quét mảng dbSalesM7 mới nhất, nếu không tìm thấy nạp tiếp các mảng tháng trước
         let targetArray = window.dbSalesM7 || window.dbSalesM6 || window.dbSalesM5 || [];
         
         if (Array.isArray(targetArray)) {
-            // Lọc toàn bộ các giao dịch của khách hàng này để cộng dồn doanh số thực tế
             targetArray.forEach(line => {
                 if (line && line.cusCode && line.cusCode.toString().trim() === cusCode) {
                     totalSales += parseFloat(line.sales) || 0;
@@ -280,17 +270,15 @@
     function processExcelData(sheetData) {
         let areaSet = new Set();
         let records = [];
-        let uniqueCusOnRoute = new Set(); // Dùng Set để Distinct Count mã khách trên tuyến
 
-        // Reset dữ liệu thống kê trên các đa giác phục vụ vẽ bản đồ nhiệt
         masterGeoJSON.features.forEach(f => {
-            f.properties._distinctCusOnRoute = new Set(); // Lưu Set để Distinct Count khách trên tuyến cấp quận huyện
-            f.properties._distinctCusOrdered = new Set(); // Lưu Set để Distinct Count khách lên đơn cấp quận huyện
+            f.properties._distinctCusOnRoute = new Set();
+            f.properties._distinctCusOrdered = new Set();
             f.properties._revenue = 0;
         });
 
         sheetData.forEach((row, idx) => {
-            if (idx === 0 || !row[5]) return; // Tiêu đề hoặc dòng rỗng
+            if (idx === 0 || !row[5]) return; 
             
             let area = row[24] ? row[24].toString().trim() : "Khác";
             let ma_kh = row[5] ? row[5].toString().trim() : "";
@@ -299,23 +287,18 @@
             
             if (area) areaSet.add(area);
 
-            // Gọi hàm quét mảng giao dịch để lấy doanh số chính xác dựa trên cấu trúc mảng mới của bạn
             let salesSummary = getCustomerSalesSummary(ma_kh);
-
             let matchedRegion = null;
 
-            // Kiểm tra xem khách hàng có tọa độ hợp lệ không
             if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                 let pt = turf.point([lng, lat]);
 
-                // Quét không gian tìm phân vùng hành chính
                 for (let f of masterGeoJSON.features) {
                     const bbox = f._bbox;
                     if (lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
                         if (turf.booleanPointInPolygon(pt, f)) {
                             matchedRegion = f.properties;
                             
-                            // Đổ dữ liệu tích lũy phục vụ tô màu bản đồ nhiệt cấp Quận/Huyện
                             if (f.properties._level === "quan_huyen") {
                                 f.properties._distinctCusOnRoute.add(ma_kh);
                                 if (salesSummary.isOrdered) {
@@ -329,7 +312,6 @@
                 }
             }
 
-            // Đẩy bản ghi thô vào mảng để tiến hành gom nhóm hiển thị lên bảng biểu
             if (matchedRegion) {
                 records.push({
                     cusCode: ma_kh,
@@ -341,7 +323,6 @@
                     isOrdered: salesSummary.isOrdered
                 });
             } else {
-                // Tọa độ 0 hoặc không hợp lệ -> Đưa vào nhóm "Chưa rõ" nhưng không bỏ qua doanh số và thông tin tuyến
                 records.push({
                     cusCode: ma_kh,
                     area: area,
@@ -354,18 +335,14 @@
             }
         });
 
-        // Đồng bộ danh sách Area vào bộ lọc
         const selArea = document.getElementById('sel-area');
         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
         [...areaSet].sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
 
-        // Tiến hành gom nhóm dữ liệu kèm Distinct Count mã khách hàng trên bảng báo cáo
         allProcessedRows = aggregateReportRows(records);
-
         filterData();
     }
 
-    // Gom nhóm dữ liệu theo cấu trúc phân cấp, tính toán Distinct Count mã khách hàng (cusCode)
     function aggregateReportRows(records) {
         let groups = {};
         
@@ -377,8 +354,8 @@
                     province: r.province,
                     district: r.district,
                     ward: r.ward,
-                    cusOnRouteSet: new Set(), // Dùng Set để distinct mã khách trên tuyến
-                    cusOrderedSet: new Set(), // Dùng Set để distinct mã khách có đơn hàng
+                    cusOnRouteSet: new Set(),
+                    cusOrderedSet: new Set(),
                     revenue: 0
                 };
             }
@@ -386,27 +363,38 @@
             if (r.isOrdered) {
                 groups[key].cusOrderedSet.add(r.cusCode);
             }
-            groups[key].revenue += r.sales; // Cộng dồn tổng doanh số thực tế
+            // Mảng giao dịch đã được sum ở hàm getCustomerSalesSummary nên chỉ cần gán đại diện 1 lần cho mỗi khách
+            // Tuy nhiên vì 1 mã KH có thể lọt vào nhiều lần nếu file tuyến bị duplicate dòng, 
+            // ta cần check xem đã cộng doanh số của khách này vào nhóm chưa để tránh bị x2
+            if (!groups[key].cusOnRouteSet.has(r.cusCode) || Array.from(groups[key].cusOnRouteSet).indexOf(r.cusCode) === -1) {
+                // Dummy check vì .add() phía trên đã chèn vào Set rồi.
+            }
         });
 
-        // Chuyển đổi Set size thành số đếm hiển thị lên báo cáo bảng biểu
-        return Object.values(groups).map(g => ({
-            area: g.area,
-            province: g.province,
-            district: g.district,
-            ward: g.ward,
-            onRoute: g.cusOnRouteSet.size, // Đếm số lượng khách hàng duy nhất trên tuyến
-            ordered: g.cusOrderedSet.size, // Đếm số lượng khách hàng duy nhất lên đơn thành công
-            revenue: g.revenue
-        }));
+        // Tính lại doanh thu chính xác: chỉ cộng theo Unique Khách Hàng (tránh duplicate file Excel làm nhân đôi doanh thu)
+        return Object.values(groups).map(g => {
+            let totalGroupRev = 0;
+            g.cusOrderedSet.forEach(cus => {
+                let s = getCustomerSalesSummary(cus);
+                totalGroupRev += s.sales;
+            });
+
+            return {
+                area: g.area,
+                province: g.province,
+                district: g.district,
+                ward: g.ward,
+                onRoute: g.cusOnRouteSet.size,
+                ordered: g.cusOrderedSet.size,
+                revenue: totalGroupRev
+            };
+        });
     }
 
-    // --- BƯỚC 3: LỌC DỮ LIỆU BẢNG VÀ BẢN ĐỒ ---
     function filterData() {
         const selectedArea = document.getElementById('sel-area').value;
         const selectedProvince = document.getElementById('sel-province').value;
 
-        // 1. Lọc bảng hiển thị
         let displayTableData = allProcessedRows.filter(r => {
             if (selectedArea && r.area !== selectedArea) return false;
             if (selectedProvince && r.province !== selectedProvince) return false;
@@ -414,7 +402,6 @@
         });
         renderTableRows(displayTableData);
 
-        // 2. Lọc dữ liệu hiển thị lớp màu Quận/Huyện trên bản đồ
         let mapFeatures = masterGeoJSON.features.filter(f => {
             let p = f.properties;
             if (p._level !== "quan_huyen") return false; 
@@ -433,7 +420,6 @@
             return;
         }
 
-        // Sắp xếp bảng theo doanh thu thực tế giảm dần
         rowsData.sort((a, b) => b.revenue - a.revenue);
 
         rowsData.forEach(p => {
@@ -451,7 +437,6 @@
         });
     }
 
-    // --- BƯỚC 4: RENDER BẢN ĐỒ NHIỆT ---
     function mapColorScale(revenue) {
         return revenue > 50000000 ? '#7D3F20' : 
                revenue > 20000000 ? '#A86134' : 
