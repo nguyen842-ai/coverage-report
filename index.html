@@ -174,6 +174,7 @@
 </div>
 
 <script>
+    // --- CẤU HÌNH SUPABASE ---
     const SUPABASE_URL = 'https://mrqldgycwovpbmzdeuyz.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -205,7 +206,7 @@
                 // Chuẩn hóa thuộc tính dựa trên logic phân cấp hành chính yêu cầu
                 masterGeoJSON.features.forEach(f => {
                     let p = f.properties;
-                    // Kiểm tra chuỗi khởi đầu bằng "VNM" để nhận diện cấp Phường/Xã
+                    // Kiểm tra chuỗi name khởi đầu bằng "VNM" để nhận diện cấp Phường/Xã
                     if (p.name && p.name.startsWith("VNM")) {
                         f.properties._level = "phuong_xa";
                         f.properties._province = p.COUNTRY;
@@ -259,7 +260,7 @@
         let areaSet = new Set();
 
         sheetData.forEach((row, idx) => {
-            if (idx === 0 || !row[5]) return; // Bỏ qua tiêu đề
+            if (idx === 0 || !row[5]) return; // Bỏ qua tiêu đề và dòng trống
             
             let area = row[24] ? row[24].toString().trim() : "Khác";
             let lat = parseFloat(row[22]);
@@ -295,9 +296,9 @@
             f.properties._assignedArea = ""; 
         });
 
-        // Chạy thuật toán đối chiếu không gian
+        // Chạy thuật toán đối chiếu không gian bằng Turf.js
         customerPoints.forEach(pt => {
-            kmlGeoJSON.features.forEach(poly => {
+            masterGeoJSON.features.forEach(poly => {
                 if (turf.booleanPointInPolygon(pt, poly)) {
                     poly.properties._onRoute += 1;
                     if (pt.properties.hasOrder) {
@@ -332,7 +333,7 @@
         // Bản đồ chỉ lấy dữ liệu Quận/Huyện để render lớp màu
         let mapFeatures = masterGeoJSON.features.filter(f => {
             let p = f.properties;
-            if (p._level !== "quan_huyen") return false; // Chỉ hiển thị ranh giới Quận Huyện
+            if (p._level !== "quan_huyen") return false; // Chỉ hiển thị ranh giới Quận Huyện để tối ưu
             if (selectedProvince && p._province !== selectedProvince) return false;
             return true;
         });
