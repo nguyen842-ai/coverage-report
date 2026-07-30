@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Báo Cáo Coverage - Web Worker Tối Ưu (Light Mode)</title>
+    <title>Báo Cáo Coverage - Web Worker (Light Mode)</title>
     
+    <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -87,20 +88,26 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
-    const MAP_BUCKET = 'mappingdata'; const DATA_BUCKET = 'data';
+    const MAP_BUCKET = 'mappingdata'; 
+    const DATA_BUCKET = 'data';
     const FILE_ROUTE = 'tuyen.xlsx'; 
-    const GEOJSON_SCAN = 'gadm41_VNM_3.json'; const GEOJSON_PROV = 'gadm41_VNM_1.json'; const GEOJSON_DIST = 'gadm41_VNM_2.json'; 
+    const GEOJSON_SCAN = 'gadm41_VNM_3.json'; 
+    const GEOJSON_PROV = 'gadm41_VNM_1.json'; 
+    const GEOJSON_DIST = 'gadm41_VNM_2.json'; 
 
     const map = L.map('map', { zoomControl: false }).setView([16.0, 106.0], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let wardFeatures = []; 
-    let provinceGeoData = null; let districtGeoData = null; 
-    let geoJsonLayer = null; let rawCustomerRecords = []; 
-    let currentAggregatedData = []; let activeDistrictName = null; 
+    let provinceGeoData = null; 
+    let districtGeoData = null; 
+    let geoJsonLayer = null; 
+    let rawCustomerRecords = []; 
+    let currentAggregatedData = []; 
+    let activeDistrictName = null; 
 
-    // CODE CHO NHÂN VIÊN ẢO (WEB WORKER) CÓ THUẬT TOÁN CỨU NÉT
+    // CODE CHO NHÂN VIÊN ẢO (WEB WORKER) - ĐÃ FIX THUỘC TÍNH GADM
     const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
 
@@ -147,7 +154,6 @@
                         }
                     }
 
-                    // CỨU NÉT (Tolerance Fallback)
                     if (!matchedWard && candidates.length > 0) {
                         let closestDist = Infinity;
                         for (let item of candidates) {
@@ -161,12 +167,14 @@
                     }
                 }
 
+                // FIX LỖI GADM Ở ĐÂY
                 if (matchedWard) {
                     rawCustomerRecords.push({
-                        cusCode: ma_kh, area: area,
-                        province: matchedWard.COUNTRY || matchedWard.NAME_1 || "Chưa rõ", 
-                        district: matchedWard.NL_NAME_1 || matchedWard.NAME_2 || "Chưa rõ",
-                        ward: matchedWard.NAME_2 || matchedWard.VARNAME_3 || "Chưa rõ"
+                        cusCode: ma_kh, 
+                        area: area,
+                        province: matchedWard.COUNTRY || "Chưa rõ", 
+                        district: matchedWard.NL_NAME_1 || matchedWard.NAME_1 || "Chưa rõ",
+                        ward: matchedWard.NAME_2 || matchedWard.NL_NAME_2 || "Chưa rõ"
                     });
                 } else {
                     rawCustomerRecords.push({ cusCode: ma_kh, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
@@ -195,7 +203,14 @@
         try {
             btn.innerHTML = "⌛ Đang nạp Sales...";
             const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(['dataM5.js', 'dataM6.js', 'dataM7.js'], 60);
-            for (let item of salesUrls) { if(item.signedUrl) { let res = await fetch(item.signedUrl); let s = document.createElement('script'); s.text = await res.text(); document.head.appendChild(s); } }
+            for (let item of salesUrls) { 
+                if(item.signedUrl) { 
+                    let res = await fetch(item.signedUrl); 
+                    let s = document.createElement('script'); 
+                    s.text = await res.text(); 
+                    document.head.appendChild(s); 
+                } 
+            }
 
             if (wardFeatures.length === 0) {
                 btn.innerHTML = "⌛ Đang tải hệ tọa độ...";
@@ -211,7 +226,6 @@
             let workbook = XLSX.read(arrBuffer, { type: 'array' });
             let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-            // GIAO VIỆC CHO WEB WORKER CHẠY NGẦM
             await new Promise((resolve, reject) => {
                 const blob = new Blob([workerCode], { type: 'application/javascript' });
                 const worker = new Worker(URL.createObjectURL(blob));
@@ -246,9 +260,11 @@
         }
     }
 
+    // FIX LỖI POPULATE (Đọc từ COUNTRY)
     function populateProvinceFilter() {
-        let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY || f.properties.NAME_1))].filter(Boolean).sort();
-        const sel = document.getElementById('sel-province'); sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
+        let provinces = [...new Set(wardFeatures.map(f => f.properties.COUNTRY))].filter(Boolean).sort();
+        const sel = document.getElementById('sel-province'); 
+        sel.innerHTML = '<option value="">-- Tất cả Tỉnh --</option>';
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
@@ -261,8 +277,7 @@
             else if (selectedMonth === 'M5' && typeof dbSalesM5 !== 'undefined') targetArray = dbSalesM5;
         } catch (e) { }
 
-        // 1. TẠO TỪ ĐIỂN DOANH SỐ (Thuần khiết 100%)
-        let salesDict = {};
+        let salesDict = Object.create(null);
         if (targetArray.length > 0) {
             targetArray.forEach(line => {
                 if (line && line.cusCode) {
@@ -272,22 +287,24 @@
             });
         }
 
-        let districtGroups = {};
+        let districtGroups = Object.create(null);
+        
         rawCustomerRecords.forEach(r => {
             let distKey = `${r.area}|${r.province}|${r.district}`;
-            if (!districtGroups[distKey]) districtGroups[distKey] = { area: r.area, province: r.province, district: r.district, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0, wards: {} };
+            if (!districtGroups[distKey]) {
+                districtGroups[distKey] = { area: r.area, province: r.province, district: r.district, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0, wards: Object.create(null) };
+            }
             
             let wardKey = r.ward;
-            if (!districtGroups[distKey].wards[wardKey]) districtGroups[distKey].wards[wardKey] = { wardName: r.ward, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0 };
+            if (!districtGroups[distKey].wards[wardKey]) {
+                districtGroups[distKey].wards[wardKey] = { wardName: r.ward, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revenue: 0 };
+            }
 
             let exactExcelCode = String(r.cusCode).trim();
-
             districtGroups[distKey].cusOnRouteSet.add(exactExcelCode);
             districtGroups[distKey].wards[wardKey].cusOnRouteSet.add(exactExcelCode);
 
-            // 2. KHỚP MÃ DOANH SỐ 1:1
             let cusSales = salesDict[exactExcelCode] || 0;
-            
             if (cusSales > 0) {
                 if (!districtGroups[distKey].cusOrderedSet.has(exactExcelCode)) { 
                     districtGroups[distKey].cusOrderedSet.add(exactExcelCode); 
@@ -308,81 +325,145 @@
 
     function runFilter() {
         if (rawCustomerRecords.length === 0) return; 
-        activeDistrictName = null; currentAggregatedData = processSalesDataAndAggregate();
-        const selectedArea = document.getElementById('sel-area').value; const selectedProvince = document.getElementById('sel-province').value;
+        activeDistrictName = null; 
+        currentAggregatedData = processSalesDataAndAggregate();
+        
+        const selectedArea = document.getElementById('sel-area').value; 
+        const selectedProvince = document.getElementById('sel-province').value;
+        
         let displayTableData = currentAggregatedData.filter(r => (!selectedArea || r.area === selectedArea) && (!selectedProvince || r.province === selectedProvince));
-        renderTableRows(displayTableData); renderMapState(); 
+        
+        renderTableRows(displayTableData); 
+        renderMapState(); 
     }
 
     function toggleWards(distId, distName) {
         let isExpanding = document.getElementById(`icon-${distId}`).innerText === '[+]';
         document.querySelectorAll('.ward-row').forEach(row => row.classList.remove('show'));
         document.querySelectorAll('.toggle-icon').forEach(icon => icon.innerText = '[+]');
-        if (isExpanding) { document.querySelectorAll(`.ward-row-${distId}`).forEach(row => row.classList.add('show')); document.getElementById(`icon-${distId}`).innerText = '[-]'; activeDistrictName = distName; } 
-        else { activeDistrictName = null; }
+        
+        if (isExpanding) { 
+            document.querySelectorAll(`.ward-row-${distId}`).forEach(row => row.classList.add('show')); 
+            document.getElementById(`icon-${distId}`).innerText = '[-]'; 
+            activeDistrictName = distName; 
+        } else { 
+            activeDistrictName = null; 
+        }
         renderMapState();
     }
 
     function renderTableRows(rowsData) {
         const tbody = document.getElementById('summary-body'); tbody.innerHTML = '';
         if (rowsData.length === 0) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>'; return; }
+        
         rowsData.sort((a, b) => b.revenue - a.revenue).forEach((p, index) => {
             let distId = `dist_${index}`; 
             tbody.innerHTML += `<tr class="district-row" onclick="toggleWards('${distId}', '${p.district}')"><td style="color:var(--text-muted);">${p.area}</td><td>${p.province}</td><td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td><td style="color:var(--text-muted);">-- Tổng Hợp --</td><td class="num-right">${p.onRoute.toLocaleString()}</td><td class="num-right text-orange">${p.ordered.toLocaleString()}</td><td class="num-right text-green">${p.revenue.toLocaleString()} đ</td></tr>`;
-            p.wardsData.forEach(w => { tbody.innerHTML += `<tr class="ward-row ward-row-${distId}"><td></td><td></td><td style="text-align:right; color:var(--border-color);">↳</td><td>${w.wardName}</td><td class="num-right" style="color:var(--text-muted);">${w.onRoute.toLocaleString()}</td><td class="num-right" style="color:var(--color-primary);">${w.ordered.toLocaleString()}</td><td class="num-right" style="color:#059669;">${w.revenue.toLocaleString()} đ</td></tr>`; });
+            
+            p.wardsData.forEach(w => { 
+                tbody.innerHTML += `<tr class="ward-row ward-row-${distId}"><td></td><td></td><td style="text-align:right; color:var(--border-color);">↳</td><td>${w.wardName}</td><td class="num-right" style="color:var(--text-muted);">${w.onRoute.toLocaleString()}</td><td class="num-right" style="color:var(--color-primary);">${w.ordered.toLocaleString()}</td><td class="num-right" style="color:#059669;">${w.revenue.toLocaleString()} đ</td></tr>`; 
+            });
         });
     }
 
     async function renderMapState() {
         const loader = document.getElementById('map-loader'); loader.style.display = 'block';
         try {
-            const selectedProvince = document.getElementById('sel-province').value; const selectedArea = document.getElementById('sel-area').value;
+            const selectedProvince = document.getElementById('sel-province').value; 
+            const selectedArea = document.getElementById('sel-area').value;
+
+            // 1. CHẾ ĐỘ BẢN ĐỒ CẤP XÃ (WARD)
             if (activeDistrictName && selectedProvince) {
-                let mapFeatures = wardFeatures.filter(f => (f.properties.COUNTRY||f.properties.NAME_1) === selectedProvince && (f.properties.NL_NAME_1||f.properties.NAME_2) === activeDistrictName).map(f => {
-                    let wardName = f.properties.NAME_2 || f.properties.VARNAME_3 || "Chưa rõ";
-                    let distData = currentAggregatedData.find(d => d.province === selectedProvince && d.district === activeDistrictName);
-                    let matchData = distData ? distData.wardsData.find(w => w.wardName === wardName) : null;
-                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Phường/Xã:</span> <span style='font-size:14px; font-weight:bold;'>${wardName}</span><br>Thuộc ${activeDistrictName}`;
+                // Tối ưu lookup O(1)
+                let wardLookup = Object.create(null);
+                let distData = currentAggregatedData.find(d => d.province === selectedProvince && d.district === activeDistrictName);
+                if (distData) distData.wardsData.forEach(w => wardLookup[w.wardName] = w);
+
+                let mapFeatures = wardFeatures.filter(f => f.properties.COUNTRY === selectedProvince && (f.properties.NL_NAME_1 || f.properties.NAME_1) === activeDistrictName).map(f => {
+                    let wardName = f.properties.NAME_2 || f.properties.NL_NAME_2 || "Chưa rõ";
+                    let matchData = wardLookup[wardName];
+                    
+                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; 
+                    f.properties._mapOrdered = matchData ? matchData.ordered : 0; 
+                    f.properties._mapRevenue = matchData ? matchData.revenue : 0; 
+                    f.properties._mapLabel = `<span style='color:var(--text-muted);'>Phường/Xã:</span> <span style='font-size:14px; font-weight:bold;'>${wardName}</span><br>Thuộc ${activeDistrictName}`;
                     return f;
                 });
                 renderMapLayer(mapFeatures);
-            } else if (selectedProvince) {
+            } 
+            // 2. CHẾ ĐỘ BẢN ĐỒ CẤP HUYỆN (DISTRICT)
+            else if (selectedProvince) {
                 if (!districtGeoData) districtGeoData = await fetchSupabaseGeoJSON(GEOJSON_DIST);
-                let mapFeatures = districtGeoData.features.filter(f => (f.properties.NAME_1||f.properties.COUNTRY) === selectedProvince).map(f => {
-                    let distName = f.properties.NAME_2 || f.properties.NL_NAME_1; let provName = f.properties.NAME_1 || f.properties.COUNTRY;
-                    let matchData = currentAggregatedData.find(d => d.province === provName && d.district === distName);
-                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; f.properties._mapOrdered = matchData ? matchData.ordered : 0; f.properties._mapRevenue = matchData ? matchData.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Quận/Huyện:</span> <span style='font-size:14px; font-weight:bold;'>${distName}</span>`;
+                
+                // Tối ưu lookup O(1)
+                let distLookup = Object.create(null);
+                currentAggregatedData.forEach(d => {
+                    if (d.province === selectedProvince) distLookup[d.district] = d;
+                });
+
+                let mapFeatures = districtGeoData.features.filter(f => f.properties.COUNTRY === selectedProvince).map(f => {
+                    let distName = f.properties.NL_NAME_1 || f.properties.NAME_1 || "Chưa rõ"; 
+                    let matchData = distLookup[distName];
+
+                    f.properties._mapOnRoute = matchData ? matchData.onRoute : 0; 
+                    f.properties._mapOrdered = matchData ? matchData.ordered : 0; 
+                    f.properties._mapRevenue = matchData ? matchData.revenue : 0; 
+                    f.properties._mapLabel = `<span style='color:var(--text-muted);'>Quận/Huyện:</span> <span style='font-size:14px; font-weight:bold;'>${distName}</span>`;
                     return f;
                 });
                 renderMapLayer(mapFeatures);
-            } else {
+            } 
+            // 3. CHẾ ĐỘ BẢN ĐỒ CẤP TỈNH (PROVINCE)
+            else {
                 if (!provinceGeoData) provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
-                let provAgg = {};
+                
+                // Tối ưu lookup O(1)
+                let provAgg = Object.create(null);
                 currentAggregatedData.forEach(d => {
                     if (selectedArea && d.area !== selectedArea) return; 
                     if (!provAgg[d.province]) provAgg[d.province] = { onRoute: 0, ordered: 0, revenue: 0 };
-                    provAgg[d.province].onRoute += d.onRoute; provAgg[d.province].ordered += d.ordered; provAgg[d.province].revenue += d.revenue;
+                    provAgg[d.province].onRoute += d.onRoute; 
+                    provAgg[d.province].ordered += d.ordered; 
+                    provAgg[d.province].revenue += d.revenue;
                 });
+
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let provName = f.properties.NAME_1 || f.properties.COUNTRY; let match = provAgg[provName];
-                    f.properties._mapOnRoute = match ? match.onRoute : 0; f.properties._mapOrdered = match ? match.ordered : 0; f.properties._mapRevenue = match ? match.revenue : 0; f.properties._mapLabel = `<span style='color:var(--text-muted);'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
+                    let provName = f.properties.COUNTRY || "Chưa rõ"; 
+                    let match = provAgg[provName];
+                    f.properties._mapOnRoute = match ? match.onRoute : 0; 
+                    f.properties._mapOrdered = match ? match.ordered : 0; 
+                    f.properties._mapRevenue = match ? match.revenue : 0; 
+                    f.properties._mapLabel = `<span style='color:var(--text-muted);'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
                     return f;
                 }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true);
                 renderMapLayer(mapFeatures);
             }
-        } catch (err) { console.error(err); } finally { loader.style.display = 'none'; }
+        } catch (err) { 
+            console.error(err); 
+        } finally { 
+            loader.style.display = 'none'; 
+        }
     }
 
-    function mapColorScale(revenue) { return revenue > 50000000 ? '#b91c1c' : revenue > 20000000 ? '#ea580c' : revenue > 5000000 ? '#f59e0b' : revenue > 0 ? '#fcd34d' : 'rgba(255,255,255,0.01)'; }
+    function mapColorScale(revenue) { 
+        return revenue > 50000000 ? '#b91c1c' : revenue > 20000000 ? '#ea580c' : revenue > 5000000 ? '#f59e0b' : revenue > 0 ? '#fcd34d' : 'rgba(255,255,255,0.01)'; 
+    }
 
     function renderMapLayer(featuresList) {
         if (geoJsonLayer) map.removeLayer(geoJsonLayer); 
         let displayCollection = turf.featureCollection(featuresList);
+        
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (f) { return { fillColor: mapColorScale(f.properties._mapRevenue), weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.65 }; },
             onEachFeature: function (f, layer) { layer.bindPopup(`<div style="font-size:12px; line-height:1.6;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:6px 0;">Khách tuyến: <b>${f.properties._mapOnRoute.toLocaleString()}</b><br>Lên đơn: <b style="color:var(--color-primary);">${f.properties._mapOrdered.toLocaleString()}</b><br>Doanh số: <b style="color:#059669; font-size:13px;">${f.properties._mapRevenue.toLocaleString()} đ</b></div>`); }
         }).addTo(map);
-        if (featuresList.length > 0) map.fitBounds([[turf.bbox(displayCollection)[1], turf.bbox(displayCollection)[0]], [turf.bbox(displayCollection)[3], turf.bbox(displayCollection)[2]]], { padding: [20, 20], maxZoom: 13 });
+
+        if (featuresList.length > 0) {
+            map.fitBounds([
+                [turf.bbox(displayCollection)[1], turf.bbox(displayCollection)[0]], 
+                [turf.bbox(displayCollection)[3], turf.bbox(displayCollection)[2]]
+            ], { padding: [20, 20], maxZoom: 13 });
+        }
     }
 </script>
 </body>
