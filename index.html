@@ -168,8 +168,7 @@
     let isLabelVisible = true;
     let isLegendAdded = false;
 
-    // WEB WORKER
-    const workerCode = `
+   const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
 
         self.onmessage = function(e) {
@@ -177,7 +176,7 @@
             let areaSet = new Set();
             let rawCustomerRecords = [];
 
-            self.postMessage({ type: 'progress', msg: 'Đang tạo Cây Không Gian...', percent: 0 });
+            self.postMessage({ type: 'progress', msg: 'Đang tạo Cây Không Gian và tính tâm...', percent: 0 });
             
             let spatialTree = new RBush();
             let treeItems = [];
@@ -196,14 +195,16 @@
                 let row = sheetData[index];
                 if (!row) continue; 
                 
-                let cusCode = row[3] ? String(row[3]).trim() : "";
+                // ĐÃ SỬA LẠI ĐÚNG CỘT THEO FILE EXCEL GỐC CỦA BẠN:
+                // Cột F (5) = Mã KH, Cột W (22) = Vĩ độ (Lat), Cột X (23) = Kinh độ (Lng), Cột Y (24) = Khu Vực
+                let cusCode = row[5] ? String(row[5]).trim() : "";
                 if (!cusCode) continue; 
                 
                 let area = row[24] ? String(row[24]).trim() : "Khác";
                 if (area.toLowerCase() !== "khác") areaSet.add(area);
 
-                let lat = parseFloat(row[33]); 
-                let lng = parseFloat(row[34]);
+                let lat = parseFloat(row[22]); 
+                let lng = parseFloat(row[23]);
                 
                 let matchedWard = null;
 
