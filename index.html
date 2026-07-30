@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Coverage - Tối Ưu Tương Tác</title>
+    <title>Dashboard Coverage - Tối Ưu Toàn Diện</title>
     
     <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -122,6 +122,7 @@
 </div>
 
 <script>
+    // CẤU HÌNH SUPABASE
     const SUPABASE_URL = 'https://mrqldgycwovpbmzdeuyz.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_itZfZBVw7bxE184tGh7x8A_0_r-QB5p'; 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -132,6 +133,7 @@
     const GEOJSON_PROV = 'gadm41_VNM_1.json'; 
     const GEOJSON_DIST = 'gadm41_VNM_2.json'; 
 
+    // KHỞI TẠO BẢN ĐỒ
     const map = L.map('map', { zoomControl: false }).setView([16.0, 106.0], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
@@ -139,10 +141,14 @@
     let wardFeatures = []; 
     let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let labelGroup = L.layerGroup().addTo(map);
-    let rawCustomerRecords = []; let currentAggregatedData = []; 
+    let rawCustomerRecords = []; 
+    let masterAggregatedData = []; // KHO CHỨA CACHE ĐỂ LỌC SIÊU TỐC
+    let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
+    let isLegendAdded = false;
 
+    // WEB WORKER: CHỈ LẤY THÔNG TIN TỪ VNM_3 VÀ TỐI ƯU CỨU NÉT
     const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
 
@@ -266,6 +272,10 @@
                         const selArea = document.getElementById('sel-area'); 
                         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
                         e.data.areas.sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
+                        
+                        // LƯU CACHE TỔNG ĐỂ KHÔNG PHẢI TÍNH TOÁN LẠI
+                        masterAggregatedData = processSalesDataAndAggregate();
+                        
                         worker.terminate(); 
                         resolve();
                     }
@@ -276,7 +286,7 @@
             });
 
             runFilter(); 
-            addMapLegend();
+            if(!isLegendAdded) { addMapLegend(); isLegendAdded = true; }
         } catch (error) { 
             console.error(error); alert("❌ LỖI HỆ THỐNG: " + error.message); 
         } finally { 
@@ -347,13 +357,19 @@
     }
 
     function runFilter() {
-        if (rawCustomerRecords.length === 0) return; 
+        if (masterAggregatedData.length === 0) return; 
         activeDistrictName = null; 
-        currentAggregatedData = processSalesDataAndAggregate();
+        
         const selectedArea = document.getElementById('sel-area').value; 
         const selectedProvince = document.getElementById('sel-province').value;
-        let displayTableData = currentAggregatedData.filter(r => (!selectedArea || r.area === selectedArea) && (!selectedProvince || r.province === selectedProvince));
-        renderTableRows(displayTableData); 
+        
+        // CHỈ LỌC TỪ CACHE (Khắc phục giật lag triệt để)
+        currentAggregatedData = masterAggregatedData.filter(r => 
+            (!selectedArea || r.area === selectedArea) && 
+            (!selectedProvince || r.province === selectedProvince)
+        );
+        
+        renderTableRows(currentAggregatedData); 
         renderMapState(); 
     }
 
