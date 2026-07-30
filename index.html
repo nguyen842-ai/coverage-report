@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Coverage - Super Fast Edition</title>
+    <title>Dashboard Coverage - UI/UX Nâng Cao</title>
     
     <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -24,6 +24,7 @@
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 13px; overflow: hidden; }
         #app-container { display: flex; height: 100vh; width: 100%; }
         
+        /* Bảng điều khiển */
         #report-panel { width: 68%; height: 100%; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; background: var(--bg-main); }
         .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; flex-wrap: wrap; gap: 15px; min-height: 55px; }
         .header-section h2 { margin: 0; color: var(--color-primary); font-size: 18px; font-weight: 800; }
@@ -33,6 +34,7 @@
         .filter-item label { font-size: 11px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; }
         select { background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 6px; outline: none; font-size: 13px; min-width: 140px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         
+        /* Nút bấm */
         .btn-primary { padding: 10px 16px; background-color: var(--color-primary); color: #ffffff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; height: 36px; width: 160px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3); transition: background 0.3s; }
         .btn-primary:hover:not(:disabled) { background-color: #c2410c; }
         .btn-primary:disabled { background-color: var(--border-color); color: #94a3b8; cursor: not-allowed; box-shadow: none; }
@@ -40,6 +42,7 @@
         .btn-secondary { padding: 10px 16px; background-color: #475569; color: #ffffff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; height: 36px; transition: background 0.3s; }
         .btn-secondary:hover { background-color: #334155; }
 
+        /* Bảng dữ liệu */
         #table-container { flex-grow: 1; overflow-x: auto; overflow-y: auto; background: var(--bg-panel); border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); scroll-behavior: smooth; }
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 900px; }
         th, td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
@@ -55,6 +58,7 @@
         .text-orange { color: var(--color-primary); }
         .text-red { color: #b91c1c; }
 
+        /* Bản đồ & Ghi chú */
         #map-panel { width: 32%; height: 100%; position: relative; border-left: 1px solid var(--border-color); }
         #map { width: 100%; height: 100%; background: #e5e7eb; } 
         #map-loader { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(255, 255, 255, 0.95); color: var(--color-primary); padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: 1px solid #fdba74; }
@@ -63,12 +67,36 @@
         .leaflet-popup-tip { background: #ffffff !important; }
         .region-label { background: transparent; border: none; box-shadow: none; color: #1e293b; font-weight: bold; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff; font-size: 11px; text-align: center; }
         
-        .legend { line-height: 18px; color: #333; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-family: 'Segoe UI', Tahoma, sans-serif; }
-        .legend h4 { margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; color: var(--text-main); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
-        .legend i { width: 16px; height: 16px; float: left; margin-right: 8px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.1); }
+        /* Legend Heatmap Mới - Rộng Hơn */
+        .legend { min-width: 180px; line-height: 22px; color: #333; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 13px; }
+        .legend h4 { margin: 0 0 10px 0; font-size: 14px; font-weight: bold; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 6px; text-align: center; }
+        .legend i { width: 24px; height: 16px; float: left; margin-right: 12px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.2); }
+
+        /* Vòng Tròn Loading CSS */
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(4px); z-index: 9999; display: none; flex-direction: column; justify-content: center; align-items: center; }
+        .circular-progress { position: relative; width: 150px; height: 150px; }
+        .circular-progress svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+        .circular-progress circle { fill: none; stroke-width: 8; stroke-linecap: round; }
+        .circular-progress .bg { stroke: #e2e8f0; }
+        .circular-progress .progress { stroke: var(--color-primary); stroke-dasharray: 283; stroke-dashoffset: 283; transition: stroke-dashoffset 0.1s linear; }
+        .circular-progress .percentage { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; font-weight: 900; color: var(--color-primary); }
+        .loading-msg { margin-top: 20px; font-weight: 700; color: var(--text-main); font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 </head>
 <body>
+
+<!-- Giao diện Overlay Loading -->
+<div id="loading-overlay">
+    <div class="circular-progress">
+        <svg viewBox="0 0 100 100">
+            <circle class="bg" cx="50" cy="50" r="45"></circle>
+            <!-- 2 * PI * r = 283 -->
+            <circle class="progress" cx="50" cy="50" r="45" id="progress-circle"></circle>
+        </svg>
+        <div class="percentage" id="progress-text">0%</div>
+    </div>
+    <div class="loading-msg" id="loading-msg">Đang khởi tạo hệ thống...</div>
+</div>
 
 <div id="app-container">
     <div id="report-panel">
@@ -134,13 +162,13 @@
     let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let labelGroup = L.layerGroup().addTo(map);
     let rawCustomerRecords = []; 
-    let masterAggregatedData = []; // BIẾN CACHE: GIÚP CHUYỂN BỘ LỌC TỨC THÌ
+    let masterAggregatedData = []; 
     let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
     let isLegendAdded = false;
 
-    // WEB WORKER: NHẬN DẠNG ĐÚNG CỘT TỌA ĐỘ VÀ MÃ KHÁCH HÀNG
+    // WEB WORKER
     const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
 
@@ -149,7 +177,7 @@
             let areaSet = new Set();
             let rawCustomerRecords = [];
 
-            self.postMessage({ type: 'progress', msg: '⌛ Đang tạo Cây Không Gian và tính tâm...' });
+            self.postMessage({ type: 'progress', msg: 'Đang tạo Cây Không Gian...', percent: 0 });
             
             let spatialTree = new RBush();
             let treeItems = [];
@@ -161,16 +189,15 @@
             });
             spatialTree.load(treeItems);
 
-            self.postMessage({ type: 'progress', msg: '⌛ Đang quy chiếu tọa độ...' });
+            self.postMessage({ type: 'progress', msg: 'Đang quy chiếu tọa độ...', percent: 5 });
             
             let total = sheetData.length;
             for (let index = 1; index < total; index++) {
                 let row = sheetData[index];
                 if (!row) continue; 
                 
-                // Cột D (3) = Mã KH, AH (33) = Vĩ độ, AI (34) = Kinh độ, Y (24) = Khu Vực
                 let cusCode = row[3] ? String(row[3]).trim() : "";
-                if (!cusCode) continue; // Bỏ qua dòng trống mã KH
+                if (!cusCode) continue; 
                 
                 let area = row[24] ? String(row[24]).trim() : "Khác";
                 if (area.toLowerCase() !== "khác") areaSet.add(area);
@@ -216,8 +243,10 @@
                     rawCustomerRecords.push({ cusCode: cusCode, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
                 }
 
-                if (index % 3000 === 0) {
-                    self.postMessage({ type: 'progress', msg: \`⌛ Đang xử lý: \${Math.round((index / total) * 100)}%\` });
+                // Cập nhật phần trăm tiến độ
+                if (index % 1000 === 0) {
+                    let currentPercent = Math.round((index / total) * 100);
+                    self.postMessage({ type: 'progress', msg: \`Đang quét dữ liệu...\`, percent: currentPercent });
                 }
             }
 
@@ -229,26 +258,45 @@
         };
     `;
 
+    // Hàm cập nhật vòng tròn UI
+    function updateLoadingUI(msg, percent) {
+        document.getElementById('loading-msg').innerText = msg;
+        if (percent !== null) {
+            document.getElementById('progress-text').innerText = percent + '%';
+            // Chu vi hình tròn là 283 (2 * pi * 45)
+            const offset = 283 - (283 * percent / 100);
+            document.getElementById('progress-circle').style.strokeDashoffset = offset;
+        } else {
+            document.getElementById('progress-text').innerText = '...';
+            document.getElementById('progress-circle').style.strokeDashoffset = 283;
+        }
+    }
+
     async function fetchSupabaseGeoJSON(fileName) {
         const { data: urlData } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
         let res = await fetch(urlData[0].signedUrl); return await res.json();
     }
 
     async function initLoadAndProcess() {
-        const btn = document.getElementById('btnRun'); btn.disabled = true;
+        const btn = document.getElementById('btnRun'); 
+        btn.disabled = true;
+        
+        // Mở Overlay
+        document.getElementById('loading-overlay').style.display = 'flex';
+
         try {
-            btn.innerHTML = "⌛ Đang nạp Sales...";
+            updateLoadingUI("Đang nạp Sales M5, M6, M7...", 0);
             const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(['dataM5.js', 'dataM6.js', 'dataM7.js'], 60);
             for (let item of salesUrls) { if(item.signedUrl) { let res = await fetch(item.signedUrl); let s = document.createElement('script'); s.text = await res.text(); document.head.appendChild(s); } }
 
             if (wardFeatures.length === 0) {
-                btn.innerHTML = "⌛ Đang tải hệ tọa độ...";
+                updateLoadingUI("Đang tải hệ tọa độ GADM...", 0);
                 let masterGeoJSON = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
-                wardFeatures = masterGeoJSON.features; // Lấy trực tiếp, không dùng mảng phụ gây chậm
+                wardFeatures = masterGeoJSON.features;
                 populateProvinceFilter();
             }
 
-            btn.innerHTML = "⌛ Đang đọc file Excel...";
+            updateLoadingUI("Đang đọc file Excel Khách Hàng...", 0);
             const { data: excelUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
             let resExcel = await fetch(excelUrl[0].signedUrl);
             let arrBuffer = await resExcel.arrayBuffer();
@@ -261,14 +309,15 @@
 
                 worker.onmessage = function(e) {
                     if (e.data.type === 'progress') {
-                        btn.innerHTML = e.data.msg;
+                        updateLoadingUI(e.data.msg, e.data.percent);
                     } else if (e.data.type === 'done') {
+                        updateLoadingUI("Hoàn tất, đang dựng Bảng...", 100);
+                        
                         rawCustomerRecords = e.data.rawCustomerRecords;
                         const selArea = document.getElementById('sel-area'); 
                         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
                         e.data.areas.sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
                         
-                        // LƯU CACHE TỔNG 1 LẦN DUY NHẤT ĐỂ TĂNG TỐC CHO BỘ LỌC
                         masterAggregatedData = processSalesDataAndAggregate();
                         
                         worker.terminate(); 
@@ -285,7 +334,10 @@
         } catch (error) { 
             console.error(error); alert("❌ LỖI HỆ THỐNG: " + error.message); 
         } finally { 
-            btn.innerHTML = "🔄 Nạp Dữ Liệu"; btn.disabled = false; 
+            btn.innerHTML = "🔄 Nạp Lại Dữ Liệu"; 
+            btn.disabled = false; 
+            // Tắt Overlay
+            document.getElementById('loading-overlay').style.display = 'none';
         }
     }
 
@@ -358,7 +410,6 @@
         const selectedArea = document.getElementById('sel-area').value; 
         const selectedProvince = document.getElementById('sel-province').value;
         
-        // CHỈ LỌC TỪ CACHE MẢNG (Khắc phục giật lag cực độ)
         currentAggregatedData = masterAggregatedData.filter(r => 
             (!selectedArea || r.area === selectedArea) && 
             (!selectedProvince || r.province === selectedProvince)
@@ -386,7 +437,6 @@
         renderMapState();
     }
 
-    // TỐI ƯU DOM: CHỈ DÙNG 1 LẦN innerHTML
     function renderTableRows(rowsData) {
         const tbody = document.getElementById('summary-body'); 
         if (rowsData.length === 0) { 
@@ -394,7 +444,7 @@
             return; 
         }
         
-        let htmlString = ""; // Xây dựng chuỗi toàn bộ table HTML để nhét vào DOM 1 lần
+        let htmlString = ""; 
         
         rowsData.sort((a, b) => b.totalRev - a.totalRev).forEach((p, index) => {
             let distId = `dist_${index}`; 
@@ -424,7 +474,7 @@
             });
         });
 
-        tbody.innerHTML = htmlString; // Áp dụng chuỗi, DOM load ngay lập tức
+        tbody.innerHTML = htmlString; 
     }
 
     async function renderMapState() {
@@ -571,7 +621,6 @@
         const legend = L.control({position: 'bottomleft'});
         legend.onAdd = function (map) {
             const div = L.DomUtil.create('div', 'legend');
-            const grades = [0, 5000000, 20000000, 50000000, 100000000, 500000000];
             const labels = ['0 đ', '> 0 đ', '> 5 Triệu', '> 20 Triệu', '> 50 Triệu', '> 100 Triệu', '> 500 Triệu'];
             const colors = ['rgba(255,255,255,0.5)', '#fef08a', '#fcd34d', '#f59e0b', '#ea580c', '#b91c1c', '#7f1d1d'];
 
