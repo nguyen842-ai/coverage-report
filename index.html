@@ -22,7 +22,6 @@
             --border-color: #cbd5e1;
         }
         
-        /* Đã thu nhỏ font-size và các kích thước xuống ~60% */
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 9px; overflow: hidden; }
         #app-container { display: flex; height: 100vh; width: 100%; }
         
@@ -96,17 +95,17 @@
         <div class="header-section">
             <h2>📊 BÁO CÁO DOANH SỐ ĐỊA LÝ (DASHBOARD)</h2>
             <div class="filter-group">
-                <!-- Bộ Lọc Thác (Lọc dần từ Trái sang Phải) -->
-                <div class="filter-item">
-                    <label>Nhà phân phối</label>
-                    <select id="sel-distributor" onchange="runFilter('dist')">
-                        <option value="">-- Tất cả NPP --</option>
-                    </select>
-                </div>
+                <!-- Đảo vị trí: Lọc Area (Cha) -> Lọc NPP (Con) -> Tỉnh / TP (Cháu) -->
                 <div class="filter-item">
                     <label>Khu vực</label>
                     <select id="sel-area" onchange="runFilter('area')">
                         <option value="">-- Tất cả Area --</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>Nhà phân phối</label>
+                    <select id="sel-distributor" onchange="runFilter('dist')">
+                        <option value="">-- Tất cả NPP --</option>
                     </select>
                 </div>
                 <div class="filter-item">
@@ -188,7 +187,6 @@
 
         self.onmessage = function(e) {
             const { sheetData, wardFeatures } = e.data;
-            let distSet = new Set(); 
             let rawCustomerRecords = [];
 
             self.postMessage({ type: 'progress', msg: 'Đang tạo Cây Không Gian và tính tâm...', percent: 0 });
@@ -214,10 +212,7 @@
                 if (!cusCode) continue; 
                 
                 let area = row[24] ? String(row[24]).trim() : "Khác";
-
                 let distributor = row[2] ? String(row[2]).trim() : "Khác";
-                if (distributor.toLowerCase() !== "khác" && distributor !== "") distSet.add(distributor);
-
                 let lat = parseFloat(row[22]); 
                 let lng = parseFloat(row[23]);
                 
@@ -279,8 +274,7 @@
 
             self.postMessage({
                 type: 'done',
-                rawCustomerRecords: rawCustomerRecords,
-                distributors: Array.from(distSet) 
+                rawCustomerRecords: rawCustomerRecords
             });
         };
     `;
@@ -344,14 +338,7 @@
                         updateLoadingUI(e.data.msg, e.data.percent);
                     } else if (e.data.type === 'done') {
                         updateLoadingUI("Hoàn tất, đang dựng Bảng...", 100);
-                        
                         rawCustomerRecords = e.data.rawCustomerRecords;
-                        
-                        // Đổ dữ liệu cấp 1: Nhà Phân Phối
-                        const selDist = document.getElementById('sel-distributor'); 
-                        selDist.innerHTML = '<option value="">-- Tất cả NPP --</option>';
-                        e.data.distributors.sort().forEach(d => selDist.innerHTML += `<option value="${d}">${d}</option>`);
-                        
                         worker.terminate(); 
                         resolve();
                     }
@@ -361,7 +348,7 @@
                 worker.postMessage({ sheetData: sheetData, wardFeatures: wardFeatures });
             });
 
-            // Chạy runFilter lần đầu (Hệ thống sẽ tự tính toán các bộ lọc con: Area & Tỉnh Thành)
+            // Chạy runFilter lần đầu (Hệ thống sẽ tự tính toán toàn bộ các Dropdown Area, NPP, Tỉnh Thành)
             runFilter(); 
             if(!isLegendAdded) { addMapLegend(); isLegendAdded = true; }
         } catch (error) { 
@@ -375,48 +362,60 @@
         }
     }
 
-    // LOGIC BỘ LỌC THÁC (CASCADING FILTER)
+    // LOGIC BỘ LỌC THÁC (CASCADING FILTER): AREA -> NPP -> TỈNH/TP
     function runFilter(source) {
         if (rawCustomerRecords.length === 0) return; 
 
-        const selDist = document.getElementById('sel-distributor');
         const selArea = document.getElementById('sel-area');
+        const selDist = document.getElementById('sel-distributor');
         const selProv = document.getElementById('sel-province');
 
-        let currentDist = selDist.value;
         let currentArea = selArea.value;
+        let currentDist = selDist.value;
         let currentProv = selProv.value;
 
-        // Nếu thay đổi NPP hoặc thay đổi Area -> Cập nhật lại danh sách của dropdown con
-        if (source === 'dist' || source === 'area' || !source) {
-            
-            // 1. Tính toán danh sách Area khả dụng theo NPP
-            let validAreas = new Set();
-            rawCustomerRecords.forEach(r => {
-                if (!currentDist || r.distributor === currentDist) validAreas.add(r.area);
-            });
-            
-            // Xóa lựa chọn Area nếu không còn hợp lệ
-            if (currentArea && !validAreas.has(currentArea)) { currentArea = ""; selArea.value = ""; }
-            
-            // Cập nhật giao diện Dropdown Area
+        // 1. Nếu hệ thống khởi tạo lần đầu (không có source) -> Đổ danh sách Area
+        if (!source) {
+            let allAreas = new Set();
+            rawCustomerRecords.forEach(r => { if(r.area && r.area.toLowerCase() !== 'khác') allAreas.add(r.area); });
             selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
-            Array.from(validAreas).sort().forEach(a => {
+            Array.from(allAreas).sort().forEach(a => {
                 selArea.innerHTML += `<option value="${a}" ${a === currentArea ? 'selected' : ''}>${a}</option>`;
             });
+        }
 
-            // 2. Tính toán danh sách Tỉnh/Thành khả dụng theo NPP + Area
+        // 2. Nếu thay đổi Area (hoặc lúc khởi tạo) -> Đổ lại danh sách NPP (chỉ lấy NPP thuộc Area đó)
+        if (source === 'area' || !source) {
+            let validDists = new Set();
+            rawCustomerRecords.forEach(r => {
+                if ((!currentArea || r.area === currentArea) && r.distributor.toLowerCase() !== 'khác' && r.distributor !== "") {
+                    validDists.add(r.distributor);
+                }
+            });
+            
+            // Xóa lựa chọn NPP nếu NPP cũ không còn nằm trong Area mới
+            if (currentDist && !validDists.has(currentDist)) { currentDist = ""; selDist.value = ""; }
+            
+            selDist.innerHTML = '<option value="">-- Tất cả NPP --</option>';
+            Array.from(validDists).sort().forEach(d => {
+                selDist.innerHTML += `<option value="${d}" ${d === currentDist ? 'selected' : ''}>${d}</option>`;
+            });
+        }
+
+        // 3. Nếu thay đổi Area hoặc NPP (hoặc lúc khởi tạo) -> Đổ lại danh sách Tỉnh/TP
+        if (source === 'area' || source === 'dist' || !source) {
             let validProvinces = new Set();
             rawCustomerRecords.forEach(r => {
-                let matchDist = !currentDist || r.distributor === currentDist;
                 let matchArea = !currentArea || r.area === currentArea;
-                if (matchDist && matchArea) validProvinces.add(r.province);
+                let matchDist = !currentDist || r.distributor === currentDist;
+                if (matchArea && matchDist && r.province !== "Chưa rõ") {
+                    validProvinces.add(r.province);
+                }
             });
 
-            // Xóa lựa chọn Tỉnh/Thành nếu không còn hợp lệ
+            // Xóa lựa chọn Tỉnh/TP nếu Tỉnh cũ không còn phù hợp
             if (currentProv && !validProvinces.has(currentProv)) { currentProv = ""; selProv.value = ""; }
 
-            // Cập nhật giao diện Dropdown Tỉnh/Thành
             selProv.innerHTML = '<option value="">-- Toàn quốc --</option>';
             Array.from(validProvinces).sort().forEach(p => {
                 selProv.innerHTML += `<option value="${p}" ${p === currentProv ? 'selected' : ''}>${p}</option>`;
