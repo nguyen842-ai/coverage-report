@@ -67,7 +67,7 @@
         .leaflet-popup-tip { background: #ffffff !important; }
         .region-label { background: transparent; border: none; box-shadow: none; color: #1e293b; font-weight: bold; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff; font-size: 11px; text-align: center; }
         
-        /* Legend Heatmap Mới - Rộng Hơn */
+        /* Legend Heatmap */
         .legend { min-width: 180px; line-height: 22px; color: #333; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 13px; }
         .legend h4 { margin: 0 0 10px 0; font-size: 14px; font-weight: bold; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 6px; text-align: center; }
         .legend i { width: 24px; height: 16px; float: left; margin-right: 12px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.2); }
@@ -85,12 +85,10 @@
 </head>
 <body>
 
-<!-- Giao diện Overlay Loading -->
 <div id="loading-overlay">
     <div class="circular-progress">
         <svg viewBox="0 0 100 100">
             <circle class="bg" cx="50" cy="50" r="45"></circle>
-            <!-- 2 * PI * r = 283 -->
             <circle class="progress" cx="50" cy="50" r="45" id="progress-circle"></circle>
         </svg>
         <div class="percentage" id="progress-text">0%</div>
@@ -103,6 +101,13 @@
         <div class="header-section">
             <h2>📊 BÁO CÁO DOANH SỐ ĐỊA LÝ (DASHBOARD)</h2>
             <div class="filter-group">
+                <!-- Thêm bộ lọc Nhà Phân Phối -->
+                <div class="filter-item">
+                    <label>Nhà phân phối</label>
+                    <select id="sel-distributor" onchange="runFilter()">
+                        <option value="">-- Tất cả NPP --</option>
+                    </select>
+                </div>
                 <div class="filter-item">
                     <label>Khu vực</label>
                     <select id="sel-area" onchange="runFilter()">
@@ -161,19 +166,41 @@
     let wardFeatures = []; 
     let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let labelGroup = L.layerGroup().addTo(map);
+    
     let rawCustomerRecords = []; 
-    let masterAggregatedData = []; 
     let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
     let isLegendAdded = false;
 
-   const workerCode = `
+    // Biến toàn cục lưu Dictionary Sales để tối ưu tốc độ Filter
+    let salesDictM5 = Object.create(null);
+    let salesDictM6 = Object.create(null);
+    let salesDictM7 = Object.create(null);
+
+    // WORKER XỬ LÝ BACKGROUND: TÌM TỌA ĐỘ VÀ KIỂM TRA CHÉO LOGIC AREA
+    const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
+
+        // Hàm loại bỏ dấu tiếng Việt để so sánh chính xác
+        function removeAccents(str) {
+            if (!str) return "";
+            return str.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
+        }
+
+        // TỪ ĐIỂN MAP AREA -> TỈNH/THÀNH HỢP LỆ (BẠN CÓ THỂ THÊM BỚT TÙY Ý CÔNG TY)
+        const validAreaMapping = {
+            "north mekong": ["long an", "tien giang", "ben tre", "tra vinh", "vinh long", "dong thap"],
+            "south mekong": ["can tho", "hau giang", "soc trang", "bac lieu", "ca mau", "kien giang", "an giang"],
+            "hcm": ["ho chi minh", "hcm"],
+            "ha noi": ["ha noi"]
+            // Thêm các Area khác theo form: "tên area viết thường không dấu": ["tỉnh 1", "tỉnh 2"]
+        };
 
         self.onmessage = function(e) {
             const { sheetData, wardFeatures } = e.data;
             let areaSet = new Set();
+            let distSet = new Set(); 
             let rawCustomerRecords = [];
 
             self.postMessage({ type: 'progress', msg: 'Đang tạo Cây Không Gian và tính tâm...', percent: 0 });
@@ -188,26 +215,29 @@
             });
             spatialTree.load(treeItems);
 
-            self.postMessage({ type: 'progress', msg: 'Đang quy chiếu tọa độ...', percent: 5 });
+            self.postMessage({ type: 'progress', msg: 'Đang quy chiếu và check chéo tọa độ...', percent: 5 });
             
             let total = sheetData.length;
             for (let index = 1; index < total; index++) {
                 let row = sheetData[index];
                 if (!row) continue; 
                 
-                // ĐÃ SỬA LẠI ĐÚNG CỘT THEO FILE EXCEL GỐC CỦA BẠN:
-                // Cột F (5) = Mã KH, Cột W (22) = Vĩ độ (Lat), Cột X (23) = Kinh độ (Lng), Cột Y (24) = Khu Vực
+                // Cột C (2) = Nhà phân phối, Cột F (5) = Mã KH, Cột W (22) = Lat, Cột X (23) = Lng, Cột Y (24) = Khu Vực
                 let cusCode = row[5] ? String(row[5]).trim() : "";
                 if (!cusCode) continue; 
                 
                 let area = row[24] ? String(row[24]).trim() : "Khác";
                 if (area.toLowerCase() !== "khác") areaSet.add(area);
 
+                let distributor = row[2] ? String(row[2]).trim() : "Khác";
+                if (distributor.toLowerCase() !== "khác" && distributor !== "") distSet.add(distributor);
+
                 let lat = parseFloat(row[22]); 
                 let lng = parseFloat(row[23]);
                 
                 let matchedWard = null;
 
+                // BƯỚC 1: TÌM TỌA ĐỘ TRÊN BẢN ĐỒ
                 if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                     let pt = turf.point([lng, lat]);
                     let candidates = spatialTree.search({ minX: lng, minY: lat, maxX: lng, maxY: lat });
@@ -233,18 +263,31 @@
                     }
                 }
 
+                // BƯỚC 2: CHECK CHÉO LOGIC SAU KHI TÌM ĐƯỢC TỌA ĐỘ
+                if (matchedWard) {
+                    let mapProvince = removeAccents(matchedWard.COUNTRY || ""); 
+                    let currentArea = removeAccents(area);
+
+                    if (validAreaMapping[currentArea]) {
+                        let isLogicValid = validAreaMapping[currentArea].some(validProv => mapProvince.includes(validProv));
+                        if (!isLogicValid) {
+                            // Tọa độ ra kết quả Tỉnh KHÔNG THUỘC Area này -> Tọa độ sai, ép về "Chưa rõ"
+                            matchedWard = null; 
+                        }
+                    }
+                }
+
                 if (matchedWard) {
                     rawCustomerRecords.push({
-                        cusCode: cusCode, area: area,
+                        cusCode: cusCode, area: area, distributor: distributor,
                         province: matchedWard.COUNTRY || "Chưa rõ", 
                         district: matchedWard.NL_NAME_1 || "Chưa rõ",
                         ward: matchedWard.NAME_2 || "Chưa rõ"
                     });
                 } else {
-                    rawCustomerRecords.push({ cusCode: cusCode, area: area, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
+                    rawCustomerRecords.push({ cusCode: cusCode, area: area, distributor: distributor, province: "Chưa rõ", district: "Chưa rõ", ward: "Chưa rõ" });
                 }
 
-                // Cập nhật phần trăm tiến độ
                 if (index % 1000 === 0) {
                     let currentPercent = Math.round((index / total) * 100);
                     self.postMessage({ type: 'progress', msg: \`Đang quét dữ liệu...\`, percent: currentPercent });
@@ -254,17 +297,16 @@
             self.postMessage({
                 type: 'done',
                 rawCustomerRecords: rawCustomerRecords,
-                areas: Array.from(areaSet)
+                areas: Array.from(areaSet),
+                distributors: Array.from(distSet) 
             });
         };
     `;
 
-    // Hàm cập nhật vòng tròn UI
     function updateLoadingUI(msg, percent) {
         document.getElementById('loading-msg').innerText = msg;
         if (percent !== null) {
             document.getElementById('progress-text').innerText = percent + '%';
-            // Chu vi hình tròn là 283 (2 * pi * 45)
             const offset = 283 - (283 * percent / 100);
             document.getElementById('progress-circle').style.strokeDashoffset = offset;
         } else {
@@ -281,14 +323,18 @@
     async function initLoadAndProcess() {
         const btn = document.getElementById('btnRun'); 
         btn.disabled = true;
-        
-        // Mở Overlay
         document.getElementById('loading-overlay').style.display = 'flex';
 
         try {
             updateLoadingUI("Đang nạp Sales M5, M6, M7...", 0);
             const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(['dataM5.js', 'dataM6.js', 'dataM7.js'], 60);
             for (let item of salesUrls) { if(item.signedUrl) { let res = await fetch(item.signedUrl); let s = document.createElement('script'); s.text = await res.text(); document.head.appendChild(s); } }
+
+            // Tạo Global Dictionaries cho Sales để tối ưu Filter
+            salesDictM5 = Object.create(null); salesDictM6 = Object.create(null); salesDictM7 = Object.create(null);
+            try { if (typeof dbSalesM5 !== 'undefined') dbSalesM5.forEach(l => { if(l && l.cusCode) salesDictM5[String(l.cusCode).trim()] = (salesDictM5[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
+            try { if (typeof dbSalesM6 !== 'undefined') dbSalesM6.forEach(l => { if(l && l.cusCode) salesDictM6[String(l.cusCode).trim()] = (salesDictM6[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
+            try { if (typeof dbSalesM7 !== 'undefined') dbSalesM7.forEach(l => { if(l && l.cusCode) salesDictM7[String(l.cusCode).trim()] = (salesDictM7[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
 
             if (wardFeatures.length === 0) {
                 updateLoadingUI("Đang tải hệ tọa độ GADM...", 0);
@@ -315,11 +361,16 @@
                         updateLoadingUI("Hoàn tất, đang dựng Bảng...", 100);
                         
                         rawCustomerRecords = e.data.rawCustomerRecords;
+                        
+                        // Đổ dữ liệu Area
                         const selArea = document.getElementById('sel-area'); 
                         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
                         e.data.areas.sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
-                        
-                        masterAggregatedData = processSalesDataAndAggregate();
+
+                        // Đổ dữ liệu Nhà Phân Phối
+                        const selDist = document.getElementById('sel-distributor'); 
+                        selDist.innerHTML = '<option value="">-- Tất cả NPP --</option>';
+                        e.data.distributors.sort().forEach(d => selDist.innerHTML += `<option value="${d}">${d}</option>`);
                         
                         worker.terminate(); 
                         resolve();
@@ -337,7 +388,6 @@
         } finally { 
             btn.innerHTML = "🔄 Nạp Lại Dữ Liệu"; 
             btn.disabled = false; 
-            // Tắt Overlay
             document.getElementById('loading-overlay').style.display = 'none';
         }
     }
@@ -349,17 +399,20 @@
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    function processSalesDataAndAggregate() {
-        let salesDictM5 = Object.create(null);
-        let salesDictM6 = Object.create(null);
-        let salesDictM7 = Object.create(null);
-
-        try { if (typeof dbSalesM5 !== 'undefined') dbSalesM5.forEach(l => { if(l && l.cusCode) salesDictM5[String(l.cusCode).trim()] = (salesDictM5[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
-        try { if (typeof dbSalesM6 !== 'undefined') dbSalesM6.forEach(l => { if(l && l.cusCode) salesDictM6[String(l.cusCode).trim()] = (salesDictM6[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
-        try { if (typeof dbSalesM7 !== 'undefined') dbSalesM7.forEach(l => { if(l && l.cusCode) salesDictM7[String(l.cusCode).trim()] = (salesDictM7[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
+    // TÍNH TOÁN ĐỘNG KHI CÓ SỰ THAY ĐỔI FILTER
+    function aggregateDataWithFilters() {
+        const selectedArea = document.getElementById('sel-area').value; 
+        const selectedProvince = document.getElementById('sel-province').value;
+        const selectedDistributor = document.getElementById('sel-distributor').value;
 
         let districtGroups = Object.create(null);
+
         rawCustomerRecords.forEach(r => {
+            // Loại bỏ các khách hàng không thoả mãn bộ lọc
+            if (selectedArea && r.area !== selectedArea) return;
+            if (selectedProvince && r.province !== selectedProvince) return;
+            if (selectedDistributor && r.distributor !== selectedDistributor) return;
+
             let distKey = `${r.area}|${r.province}|${r.district}`;
             if (!districtGroups[distKey]) {
                 districtGroups[distKey] = { area: r.area, province: r.province, district: r.district, cusOnRouteSet: new Set(), cusOrderedSet: new Set(), revM5: 0, revM6: 0, revM7: 0, totalRev: 0, wards: Object.create(null) };
@@ -405,16 +458,10 @@
     }
 
     function runFilter() {
-        if (masterAggregatedData.length === 0) return; 
+        if (rawCustomerRecords.length === 0) return; 
         activeDistrictName = null; 
         
-        const selectedArea = document.getElementById('sel-area').value; 
-        const selectedProvince = document.getElementById('sel-province').value;
-        
-        currentAggregatedData = masterAggregatedData.filter(r => 
-            (!selectedArea || r.area === selectedArea) && 
-            (!selectedProvince || r.province === selectedProvince)
-        );
+        currentAggregatedData = aggregateDataWithFilters();
         
         renderTableRows(currentAggregatedData); 
         renderMapState(); 
@@ -483,6 +530,7 @@
         try {
             const selectedProvince = document.getElementById('sel-province').value; 
             const selectedArea = document.getElementById('sel-area').value;
+            const selectedDistributor = document.getElementById('sel-distributor').value;
 
             if (activeDistrictName && selectedProvince) {
                 let wardLookup = Object.create(null);
@@ -539,6 +587,8 @@
                     provAgg[d.province].totalRev += d.totalRev;
                 });
 
+                const isFiltered = selectedArea || selectedDistributor;
+
                 let mapFeatures = provinceGeoData.features.map(f => {
                     let provName = f.properties.GID_0 || "Chưa rõ"; 
                     let match = provAgg[provName];
@@ -552,7 +602,8 @@
                     f.properties._mapLabel = `<span style='color:var(--text-muted);'>Tỉnh/TP:</span> <span style='font-size:14px; font-weight:bold;'>${provName}</span>`;
                     f.properties._originalProvName = provName; 
                     return f;
-                }).filter(f => selectedArea ? f.properties._mapOnRoute > 0 : true);
+                }).filter(f => isFiltered ? f.properties._mapOnRoute > 0 : true);
+
                 renderMapLayer(mapFeatures, 'province');
             }
         } catch (err) { console.error(err); } finally { loader.style.display = 'none'; }
