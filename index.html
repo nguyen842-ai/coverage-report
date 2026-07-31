@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Coverage - UI/UX Nâng Cao</title>
+    <title>Coverage by Distributors and Administrative units</title>
     
     <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -99,7 +99,7 @@
 <div id="app-container">
     <div id="report-panel">
         <div class="header-section">
-            <h2>📊 BÁO CÁO DOANH SỐ ĐỊA LÝ (DASHBOARD)</h2>
+            <h2>📊 BÁO CÁO ĐỘ BAO PHỦ THEO NHÀ PHÂN PHỐI VÀ ĐỊA LÝ</h2>
             <div class="filter-group">
                 <!-- Thêm bộ lọc Nhà Phân Phối -->
                 <div class="filter-item">
@@ -108,6 +108,7 @@
                         <option value="">-- Tất cả NPP --</option>
                     </select>
                 </div>
+                <!-- Bộ lọc Khu vực (Area) -->
                 <div class="filter-item">
                     <label>Khu vực</label>
                     <select id="sel-area" onchange="runFilter()">
@@ -128,7 +129,7 @@
             <table id="summary-table">
                 <thead>
                     <tr>
-                        <th>Area</th>
+                        <!-- Đã ẩn cột Area -->
                         <th>Tỉnh / TP</th>
                         <th>Quận / Huyện</th>
                         <th>Phường / Xã</th>
@@ -140,7 +141,7 @@
                     </tr>
                 </thead>
                 <tbody id="summary-body">
-                    <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 40px;">Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Bản đồ.</td></tr>
+                    <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px;">Nhấn nút "Nạp Dữ Liệu" để hệ thống tải Sales và Bản đồ.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -173,28 +174,23 @@
     let isLabelVisible = true;
     let isLegendAdded = false;
 
-    // Biến toàn cục lưu Dictionary Sales để tối ưu tốc độ Filter
     let salesDictM5 = Object.create(null);
     let salesDictM6 = Object.create(null);
     let salesDictM7 = Object.create(null);
 
-    // WORKER XỬ LÝ BACKGROUND: TÌM TỌA ĐỘ VÀ KIỂM TRA CHÉO LOGIC AREA
     const workerCode = `
         importScripts('https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js', 'https://unpkg.com/rbush@3.0.1/rbush.min.js');
 
-        // Hàm loại bỏ dấu tiếng Việt để so sánh chính xác
         function removeAccents(str) {
             if (!str) return "";
             return str.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
         }
 
-        // TỪ ĐIỂN MAP AREA -> TỈNH/THÀNH HỢP LỆ (BẠN CÓ THỂ THÊM BỚT TÙY Ý CÔNG TY)
         const validAreaMapping = {
             "north mekong": ["long an", "tien giang", "ben tre", "tra vinh", "vinh long", "dong thap"],
             "south mekong": ["can tho", "hau giang", "soc trang", "bac lieu", "ca mau", "kien giang", "an giang"],
             "hcm": ["ho chi minh", "hcm"],
             "ha noi": ["ha noi"]
-            // Thêm các Area khác theo form: "tên area viết thường không dấu": ["tỉnh 1", "tỉnh 2"]
         };
 
         self.onmessage = function(e) {
@@ -222,7 +218,6 @@
                 let row = sheetData[index];
                 if (!row) continue; 
                 
-                // Cột C (2) = Nhà phân phối, Cột F (5) = Mã KH, Cột W (22) = Lat, Cột X (23) = Lng, Cột Y (24) = Khu Vực
                 let cusCode = row[5] ? String(row[5]).trim() : "";
                 if (!cusCode) continue; 
                 
@@ -237,7 +232,6 @@
                 
                 let matchedWard = null;
 
-                // BƯỚC 1: TÌM TỌA ĐỘ TRÊN BẢN ĐỒ
                 if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
                     let pt = turf.point([lng, lat]);
                     let candidates = spatialTree.search({ minX: lng, minY: lat, maxX: lng, maxY: lat });
@@ -263,7 +257,6 @@
                     }
                 }
 
-                // BƯỚC 2: CHECK CHÉO LOGIC SAU KHI TÌM ĐƯỢC TỌA ĐỘ
                 if (matchedWard) {
                     let mapProvince = removeAccents(matchedWard.COUNTRY || ""); 
                     let currentArea = removeAccents(area);
@@ -271,7 +264,6 @@
                     if (validAreaMapping[currentArea]) {
                         let isLogicValid = validAreaMapping[currentArea].some(validProv => mapProvince.includes(validProv));
                         if (!isLogicValid) {
-                            // Tọa độ ra kết quả Tỉnh KHÔNG THUỘC Area này -> Tọa độ sai, ép về "Chưa rõ"
                             matchedWard = null; 
                         }
                     }
@@ -316,7 +308,8 @@
     }
 
     async function fetchSupabaseGeoJSON(fileName) {
-        const { data: urlData } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
+        const { data: urlData, error } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([fileName], 60);
+        if (error || !urlData || urlData.length === 0 || urlData[0].error) throw new Error("Permission Denied");
         let res = await fetch(urlData[0].signedUrl); return await res.json();
     }
 
@@ -327,10 +320,11 @@
 
         try {
             updateLoadingUI("Đang nạp Sales M5, M6, M7...", 0);
-            const { data: salesUrls } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(['dataM5.js', 'dataM6.js', 'dataM7.js'], 60);
+            const { data: salesUrls, error: salesError } = await supabaseClient.storage.from(DATA_BUCKET).createSignedUrls(['dataM5.js', 'dataM6.js', 'dataM7.js'], 60);
+            if (salesError || !salesUrls) throw new Error("Permission Denied");
+            
             for (let item of salesUrls) { if(item.signedUrl) { let res = await fetch(item.signedUrl); let s = document.createElement('script'); s.text = await res.text(); document.head.appendChild(s); } }
 
-            // Tạo Global Dictionaries cho Sales để tối ưu Filter
             salesDictM5 = Object.create(null); salesDictM6 = Object.create(null); salesDictM7 = Object.create(null);
             try { if (typeof dbSalesM5 !== 'undefined') dbSalesM5.forEach(l => { if(l && l.cusCode) salesDictM5[String(l.cusCode).trim()] = (salesDictM5[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
             try { if (typeof dbSalesM6 !== 'undefined') dbSalesM6.forEach(l => { if(l && l.cusCode) salesDictM6[String(l.cusCode).trim()] = (salesDictM6[String(l.cusCode).trim()] || 0) + (parseFloat(l.sales) || 0); }); } catch(e){}
@@ -344,7 +338,9 @@
             }
 
             updateLoadingUI("Đang đọc file Excel Khách Hàng...", 0);
-            const { data: excelUrl } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
+            const { data: excelUrl, error: excelError } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
+            if (excelError || !excelUrl || excelUrl.length === 0 || excelUrl[0].error) throw new Error("Permission Denied");
+            
             let resExcel = await fetch(excelUrl[0].signedUrl);
             let arrBuffer = await resExcel.arrayBuffer();
             let workbook = XLSX.read(arrBuffer, { type: 'array' });
@@ -362,12 +358,10 @@
                         
                         rawCustomerRecords = e.data.rawCustomerRecords;
                         
-                        // Đổ dữ liệu Area
                         const selArea = document.getElementById('sel-area'); 
                         selArea.innerHTML = '<option value="">-- Tất cả Area --</option>';
                         e.data.areas.sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
 
-                        // Đổ dữ liệu Nhà Phân Phối
                         const selDist = document.getElementById('sel-distributor'); 
                         selDist.innerHTML = '<option value="">-- Tất cả NPP --</option>';
                         e.data.distributors.sort().forEach(d => selDist.innerHTML += `<option value="${d}">${d}</option>`);
@@ -384,7 +378,10 @@
             runFilter(); 
             if(!isLegendAdded) { addMapLegend(); isLegendAdded = true; }
         } catch (error) { 
-            console.error(error); alert("❌ LỖI HỆ THỐNG: " + error.message); 
+            console.error(error); 
+            // CẬP NHẬT: Thông báo đăng nhập và chuyển hướng về trang chủ
+            alert("Xin vui lòng đăng nhập để tiếp tục!");
+            window.location.href = "https://nguyen842-ai.github.io/Tong-hop-bao-cao/";
         } finally { 
             btn.innerHTML = "🔄 Nạp Lại Dữ Liệu"; 
             btn.disabled = false; 
@@ -399,7 +396,6 @@
         provinces.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
     }
 
-    // TÍNH TOÁN ĐỘNG KHI CÓ SỰ THAY ĐỔI FILTER
     function aggregateDataWithFilters() {
         const selectedArea = document.getElementById('sel-area').value; 
         const selectedProvince = document.getElementById('sel-province').value;
@@ -408,7 +404,6 @@
         let districtGroups = Object.create(null);
 
         rawCustomerRecords.forEach(r => {
-            // Loại bỏ các khách hàng không thoả mãn bộ lọc
             if (selectedArea && r.area !== selectedArea) return;
             if (selectedProvince && r.province !== selectedProvince) return;
             if (selectedDistributor && r.distributor !== selectedDistributor) return;
@@ -488,7 +483,7 @@
     function renderTableRows(rowsData) {
         const tbody = document.getElementById('summary-body'); 
         if (rowsData.length === 0) { 
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>'; 
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>'; 
             return; 
         }
         
@@ -497,7 +492,7 @@
         rowsData.sort((a, b) => b.totalRev - a.totalRev).forEach((p, index) => {
             let distId = `dist_${index}`; 
             htmlString += `<tr id="row-${distId}" class="district-row" onclick="toggleWards('${distId}', '${p.district}')">
-                <td style="color:var(--text-muted);">${p.area}</td>
+                <!-- Đã ẩn Cột Area ở đây -->
                 <td>${p.province}</td>
                 <td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.district}</td>
                 <td style="color:var(--text-muted);">-- Tổng Hợp --</td>
@@ -510,7 +505,7 @@
             
             p.wardsData.forEach(w => { 
                 htmlString += `<tr class="ward-row ward-row-${distId}">
-                    <td></td><td></td>
+                    <td></td>
                     <td style="text-align:right; color:var(--border-color);">↳</td>
                     <td>${w.wardName}</td>
                     <td class="num-right" style="color:var(--text-muted);">${w.onRoute.toLocaleString()}</td>
