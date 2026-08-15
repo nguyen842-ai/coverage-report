@@ -46,7 +46,7 @@
         .btn-secondary:hover { background-color: #334155; }
 
         #table-container { flex-grow: 1; overflow-x: auto; overflow-y: auto; background: var(--bg-panel); border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); scroll-behavior: smooth; }
-        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 500px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
         th, td { padding: 7px 9px; border-bottom: 1px solid var(--border-color); }
         th { background-color: var(--text-main); color: #ffffff; position: sticky; top: 0; z-index: 2; font-size: 8px; text-transform: uppercase; white-space: nowrap; }
         .district-row { cursor: pointer; transition: background 0.2s; font-weight: 500; font-size: 9px; }
@@ -126,7 +126,7 @@
         </div>
         <div id="table-container">
             <table id="summary-table">
-                <thead>
+                <thead id="summary-head">
                     <tr>
                         <th>Tỉnh / TP</th>
                         <th>Quận / Huyện</th>
@@ -167,6 +167,7 @@
 
     let rawCustomerRecords = []; 
     let unmappedRecords = []; 
+    let allUniqueMonths = []; // Lưu tất cả các tháng có trong dữ liệu
     let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
@@ -182,7 +183,6 @@
         if (!str) return "";
         let s = removeAccents(str);
         
-        // 1. Alias Dictionary (Ghi đè cứng các ca khó)
         const aliases = {
             "vung tau": "ba ria vung tau",
             "hue": "thua thien hue",
@@ -191,13 +191,25 @@
         };
         if (aliases[s]) return aliases[s];
         
-        // 2. Cắt bỏ tiền tố/hậu tố hành chính
         s = s.replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.|tt)\s+/g, "");
         s = s.replace(/\s+(thi xa|tp|thanh pho|huyen|quan|xa|phuong|thi tran)$/g, "");
         s = s.replace(/[()]/g, ""); 
         s = s.replace(/[^a-z0-9\s]/g, ""); 
         s = s.replace(/\s+/g, " "); 
         return s.trim();
+    }
+
+    // Sắp xếp danh sách tháng theo thời gian
+    function sortMonths(arr) {
+        return arr.sort((a, b) => {
+            let partsA = String(a).split('.').map(Number);
+            let partsB = String(b).split('.').map(Number);
+            if (partsA.length === 2 && partsB.length === 2) {
+                if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
+                return partsA[0] - partsB[0];
+            }
+            return String(a).localeCompare(String(b));
+        });
     }
 
     function updateLoadingUI(msg, percent) {
@@ -221,7 +233,6 @@
         document.getElementById('loading-overlay').style.display = 'flex';
 
         try {
-            // Nạp GADM
             if (!masterGeoJSON3) {
                 updateLoadingUI("Đang tải dữ liệu GADM...", 10);
                 masterGeoJSON3 = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
@@ -235,7 +246,6 @@
                 provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
             }
 
-            // Xây dựng cây tra cứu GADM (Exact Match & Normalized Match)
             let gadmLookupExact = {};
             let gadmLookupNorm = {};
 
@@ -257,7 +267,6 @@
                 gadmLookupNorm[normKey] = true;
             });
 
-            // Nạp file Excel
             updateLoadingUI("Đang đọc file Excel...", 70);
             const { data: excelUrl, error: excelError } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
             if (excelError || !excelUrl || excelUrl.length === 0 || excelUrl[0].error) throw new Error("Lỗi tải Excel");
@@ -269,6 +278,7 @@
 
             rawCustomerRecords = [];
             unmappedRecords = [];
+            let monthsSet = new Set();
 
             updateLoadingUI("Đang chuẩn hóa & Map dữ liệu...", 90);
             
@@ -283,13 +293,14 @@
                 let total = parseFloat(row[5]) || 0;
                 
                 let area = row[8] ? String(row[8]).trim() : "Khác";
-                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ"; // Cột J: Tỉnh/TP chuẩn
-                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ"; // Cột K: Quận/Huyện
-                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ"; // Cột L: Phường/Xã
+                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ"; // Cột J
+                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ"; // Cột K
+                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ"; // Cột L
 
                 if (!cusCode || total === 0) continue;
 
-                // Kiểm tra xem Phường/Xã có khớp với GADM không
+                if (month && month !== "Khác") monthsSet.add(month);
+
                 let isMapped = false;
                 let exactKey = `${removeAccents(prov)}|${removeAccents(dist)}|${removeAccents(ward)}`;
                 let normKey = `${normalizeAdminName(prov)}|${normalizeAdminName(dist)}|${normalizeAdminName(ward)}`;
@@ -298,13 +309,12 @@
                     isMapped = true;
                 }
 
-                // Luôn giữ Tỉnh/TP từ Cột J!
                 let record = { 
                     cusCode: cusCode, npp: npp, month: month, cat: cat, total: total, 
                     area: area, 
-                    prov: prov, // LẤY THẲNG CỘT J
-                    dist: dist, // LẤY THẲNG CỘT K
-                    ward: ward, // LẤY THẲNG CỘT L
+                    prov: prov, 
+                    dist: dist, 
+                    ward: ward, 
                     normProv: normalizeAdminName(prov),
                     normDist: normalizeAdminName(dist),
                     normWard: normalizeAdminName(ward),
@@ -313,13 +323,13 @@
 
                 rawCustomerRecords.push(record);
 
-                // Nếu chưa map được cấp Phường/Xã thì đưa vào danh sách kiểm tra
                 if (!isMapped && prov !== "Chưa rõ") {
                     unmappedRecords.push({ cuscode: cusCode, npp: npp, month: month, cat: cat, total: total, area: area, prov: prov, dist: dist, ward: ward });
                 }
             }
 
-            // Hiện nút Export nếu có dòng chưa khớp GADM
+            allUniqueMonths = sortMonths(Array.from(monthsSet));
+
             const btnExport = document.getElementById('btnExport');
             if (unmappedRecords.length > 0) {
                 btnExport.style.display = 'inline-block';
@@ -354,6 +364,22 @@
         link.click();
     }
 
+    // Tạo lại Header động theo danh sách tháng được chọn
+    function renderTableHead(displayMonths) {
+        const thead = document.getElementById('summary-head');
+        let monthThs = displayMonths.map(m => `<th class="num-right">DS ${m}</th>`).join('');
+        thead.innerHTML = `
+            <tr>
+                <th>Tỉnh / TP</th>
+                <th>Quận / Huyện</th>
+                <th>Phường / Xã</th>
+                <th class="num-right">Lên Đơn (CH)</th>
+                ${monthThs}
+                <th class="num-right">Tổng Doanh Số</th>
+            </tr>
+        `;
+    }
+
     function runFilter(source) {
         if (rawCustomerRecords.length === 0) return; 
 
@@ -367,15 +393,14 @@
         let cArea = selArea.value; let cDist = selDist.value; let cProv = selProv.value;
 
         if (!source) {
-            let allMonths = new Set(); let allCats = new Set(); let allAreas = new Set();
+            let allCats = new Set(); let allAreas = new Set();
             rawCustomerRecords.forEach(r => { 
-                if(r.month) allMonths.add(r.month); 
                 if(r.cat) allCats.add(r.cat); 
                 if(r.area && r.area !== 'Khác') allAreas.add(r.area); 
             });
             
             selMonth.innerHTML = '<option value="">-- Tất cả --</option>';
-            Array.from(allMonths).sort().forEach(m => selMonth.innerHTML += `<option value="${m}">${m}</option>`);
+            allUniqueMonths.forEach(m => selMonth.innerHTML += `<option value="${m}">${m}</option>`);
             
             selCat.innerHTML = '<option value="">-- Tất cả --</option>';
             Array.from(allCats).sort().forEach(c => selCat.innerHTML += `<option value="${c}">${c}</option>`);
@@ -406,9 +431,13 @@
             Array.from(validProvinces).sort().forEach(p => selProv.innerHTML += `<option value="${p}" ${p === cProv ? 'selected' : ''}>${p}</option>`);
         }
 
+        // Xác định danh sách các tháng sẽ hiển thị cột trên bảng
+        let displayMonths = cMonth ? [cMonth] : allUniqueMonths;
+        renderTableHead(displayMonths);
+
         activeDistrictName = null; 
         currentAggregatedData = aggregateDataWithFilters(cMonth, cCat, cDist, cArea, cProv);
-        renderTableRows(currentAggregatedData); 
+        renderTableRows(currentAggregatedData, displayMonths); 
         renderMapState(cProv); 
     }
 
@@ -424,23 +453,40 @@
 
             let distKey = `${r.normProv}|${r.normDist}`;
             if (!districtGroups[distKey]) {
-                districtGroups[distKey] = { prov: r.prov, dist: r.dist, normProv: r.normProv, normDist: r.normDist, cusOrderedSet: new Set(), totalRev: 0, wards: {} };
+                districtGroups[distKey] = { 
+                    prov: r.prov, dist: r.dist, normProv: r.normProv, normDist: r.normDist, 
+                    cusOrderedSet: new Set(), monthRev: {}, totalRev: 0, wards: {} 
+                };
             }
 
             let wardKey = r.normWard;
             if (!districtGroups[distKey].wards[wardKey]) {
-                districtGroups[distKey].wards[wardKey] = { wardName: r.ward, normWard: wardKey, cusOrderedSet: new Set(), totalRev: 0 };
+                districtGroups[distKey].wards[wardKey] = { 
+                    wardName: r.ward, normWard: wardKey, 
+                    cusOrderedSet: new Set(), monthRev: {}, totalRev: 0 
+                };
             }
 
             districtGroups[distKey].cusOrderedSet.add(r.cusCode);
             districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
+            
             districtGroups[distKey].totalRev += r.total;
+            districtGroups[distKey].monthRev[r.month] = (districtGroups[distKey].monthRev[r.month] || 0) + r.total;
+
             districtGroups[distKey].wards[wardKey].totalRev += r.total;
+            districtGroups[distKey].wards[wardKey].monthRev[r.month] = (districtGroups[distKey].wards[wardKey].monthRev[r.month] || 0) + r.total;
         });
 
         return Object.values(districtGroups).map(d => {
-            let wardArr = Object.values(d.wards).map(w => ({ wardName: w.wardName, normWard: w.normWard, ordered: w.cusOrderedSet.size, totalRev: w.totalRev })).sort((a,b) => b.totalRev - a.totalRev);
-            return { prov: d.prov, dist: d.dist, normProv: d.normProv, normDist: d.normDist, ordered: d.cusOrderedSet.size, totalRev: d.totalRev, wardsData: wardArr };
+            let wardArr = Object.values(d.wards).map(w => ({ 
+                wardName: w.wardName, normWard: w.normWard, ordered: w.cusOrderedSet.size, 
+                monthRev: w.monthRev, totalRev: w.totalRev 
+            })).sort((a,b) => b.totalRev - a.totalRev);
+            
+            return { 
+                prov: d.prov, dist: d.dist, normProv: d.normProv, normDist: d.normDist, 
+                ordered: d.cusOrderedSet.size, monthRev: d.monthRev, totalRev: d.totalRev, wardsData: wardArr 
+            };
         });
     }
 
@@ -464,10 +510,11 @@
         renderMapState(selProv);
     }
 
-    function renderTableRows(rowsData) {
+    function renderTableRows(rowsData, displayMonths) {
         const tbody = document.getElementById('summary-body'); 
+        const totalCols = 5 + displayMonths.length;
         if (rowsData.length === 0) { 
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>'; 
+            tbody.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>`; 
             return; 
         }
 
@@ -475,20 +522,29 @@
 
         rowsData.sort((a, b) => b.totalRev - a.totalRev).forEach((p, index) => {
             let distId = `dist_${index}`; 
+            
+            // Render từng ô doanh số theo tháng cho cấp Quận/Huyện
+            let monthTdsDist = displayMonths.map(m => `<td class="num-right text-green">${(p.monthRev[m] || 0).toLocaleString()} đ</td>`).join('');
+            
             htmlString += `<tr id="row-${distId}" class="district-row" onclick="toggleWards('${distId}', '${p.normDist}')">
                 <td>${p.prov}</td>
                 <td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.dist}</td>
                 <td style="color:var(--text-muted);">-- Tổng Hợp --</td>
                 <td class="num-right text-orange">${p.ordered.toLocaleString()}</td>
+                ${monthTdsDist}
                 <td class="num-right text-green">${p.totalRev.toLocaleString()} đ</td>
             </tr>`;
 
+            // Render từng ô doanh số theo tháng cho cấp Phường/Xã
             p.wardsData.forEach(w => { 
+                let monthTdsWard = displayMonths.map(m => `<td class="num-right text-green">${(w.monthRev[m] || 0).toLocaleString()} đ</td>`).join('');
+                
                 htmlString += `<tr class="ward-row ward-row-${distId}">
                     <td></td>
                     <td style="text-align:right; color:var(--border-color);">↳</td>
                     <td>${w.wardName}</td>
                     <td class="num-right" style="color:var(--color-primary);">${w.ordered.toLocaleString()}</td>
+                    ${monthTdsWard}
                     <td class="num-right text-green">${w.totalRev.toLocaleString()} đ</td>
                 </tr>`; 
             });
