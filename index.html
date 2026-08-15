@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coverage - Compact & Cascade (Map by Name)</title>
+    <title>Coverage - Compact & Cascade</title>
 
     <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -46,7 +46,7 @@
         .btn-secondary:hover { background-color: #334155; }
 
         #table-container { flex-grow: 1; overflow-x: auto; overflow-y: auto; background: var(--bg-panel); border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); scroll-behavior: smooth; }
-        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 500px; }
         th, td { padding: 7px 9px; border-bottom: 1px solid var(--border-color); }
         th { background-color: var(--text-main); color: #ffffff; position: sticky; top: 0; z-index: 2; font-size: 8px; text-transform: uppercase; white-space: nowrap; }
         .district-row { cursor: pointer; transition: background 0.2s; font-weight: 500; font-size: 9px; }
@@ -67,9 +67,8 @@
         .leaflet-popup-tip { background: #ffffff !important; }
         .region-label { background: transparent; border: none; box-shadow: none; color: #1e293b; font-weight: bold; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff; font-size: 8px; text-align: center; }
 
-        .legend { min-width: 120px; line-height: 16px; color: #333; background: rgba(255,255,255,0.95); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 9px; }
+        .legend { min-width: 140px; line-height: 16px; color: #333; background: rgba(255,255,255,0.95); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 9px; }
         .legend h4 { margin: 0 0 6px 0; font-size: 10px; font-weight: bold; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 4px; text-align: center; }
-        .legend i { width: 16px; height: 12px; float: left; margin-right: 8px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.2); }
 
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(4px); z-index: 9999; display: none; flex-direction: column; justify-content: center; align-items: center; }
         .circular-progress { position: relative; width: 100px; height: 100px; }
@@ -100,10 +99,6 @@
             <h2>COVERAGE REPORT</h2>
             <div class="filter-group">
                 <div class="filter-item">
-                    <label>Tháng</label>
-                    <select id="sel-month" onchange="runFilter('month')"><option value="">-- Tất cả --</option></select>
-                </div>
-                <div class="filter-item">
                     <label>Ngành hàng</label>
                     <select id="sel-cat" onchange="runFilter('cat')"><option value="">-- Tất cả --</option></select>
                 </div>
@@ -119,7 +114,7 @@
                     <label>Tỉnh / Thành Phố</label>
                     <select id="sel-province" onchange="runFilter('prov')"><option value="">-- Toàn quốc --</option></select>
                 </div>
-                <button id="btnExport" class="btn-danger" onclick="downloadUnmapped()" style="display:none;">⚠️ Tải DS Cần KT (<span id="unmapped-count">0</span>)</button>
+                <button id="btnExport" class="btn-danger" onclick="downloadUnmapped()" style="display:none;">⚠️ DS KH cần xác minh lại (<span id="unmapped-count">0</span>)</button>
                 <button id="btnToggleLabel" class="btn-secondary" onclick="toggleLabels()">👁️ Nhãn</button>
                 <button id="btnRun" class="btn-primary" onclick="initLoadAndProcess()">🔄 Nạp Dữ Liệu</button>
             </div>
@@ -128,10 +123,10 @@
             <table id="summary-table">
                 <thead id="summary-head">
                     <tr>
-                        <th>Tỉnh / TP</th>
-                        <th>Quận / Huyện</th>
-                        <th>Phường / Xã</th>
-                        <th class="num-right">Lên Đơn (CH)</th>
+                        <th>Tỉnh/TP</th>
+                        <th>Quận/Huyện</th>
+                        <th>Phường/Xã</th>
+                        <th class="num-right">Số cửa hàng lên đơn</th>
                         <th class="num-right">Tổng Doanh Số</th>
                     </tr>
                 </thead>
@@ -164,16 +159,15 @@
     let districtGeoData = null; 
     let geoJsonLayer = null; 
     let labelGroup = L.layerGroup().addTo(map);
+    let currentLegend = null; // Quản lý Legend động
 
     let rawCustomerRecords = []; 
     let unmappedRecords = []; 
-    let allUniqueMonths = []; // Lưu tất cả các tháng có trong dữ liệu
+    let allUniqueMonths = []; 
     let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
-    let isLegendAdded = false;
 
-    // --- BỘ LỌC CHUẨN HÓA KÉP ---
     function removeAccents(str) {
         if (!str) return "";
         return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -199,7 +193,6 @@
         return s.trim();
     }
 
-    // Sắp xếp danh sách tháng theo thời gian
     function sortMonths(arr) {
         return arr.sort((a, b) => {
             let partsA = String(a).split('.').map(Number);
@@ -293,9 +286,9 @@
                 let total = parseFloat(row[5]) || 0;
                 
                 let area = row[8] ? String(row[8]).trim() : "Khác";
-                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ"; // Cột J
-                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ"; // Cột K
-                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ"; // Cột L
+                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ";
+                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ";
+                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ";
 
                 if (!cusCode || total === 0) continue;
 
@@ -339,7 +332,6 @@
             }
 
             runFilter(); 
-            if(!isLegendAdded) { addMapLegend(); isLegendAdded = true; }
 
         } catch (error) { 
             console.error(error); 
@@ -364,10 +356,9 @@
         link.click();
     }
 
-    // Tạo lại Header động theo danh sách tháng được chọn
-    function renderTableHead(displayMonths) {
+    function renderTableHead() {
         const thead = document.getElementById('summary-head');
-        let monthThs = displayMonths.map(m => `<th class="num-right">DS ${m}</th>`).join('');
+        let monthThs = allUniqueMonths.map(m => `<th class="num-right">DS ${m}</th>`).join('');
         thead.innerHTML = `
             <tr>
                 <th>Tỉnh / TP</th>
@@ -383,13 +374,12 @@
     function runFilter(source) {
         if (rawCustomerRecords.length === 0) return; 
 
-        const selMonth = document.getElementById('sel-month');
         const selCat = document.getElementById('sel-cat');
         const selArea = document.getElementById('sel-area');
         const selDist = document.getElementById('sel-distributor');
         const selProv = document.getElementById('sel-province');
 
-        let cMonth = selMonth.value; let cCat = selCat.value;
+        let cCat = selCat.value;
         let cArea = selArea.value; let cDist = selDist.value; let cProv = selProv.value;
 
         if (!source) {
@@ -398,9 +388,6 @@
                 if(r.cat) allCats.add(r.cat); 
                 if(r.area && r.area !== 'Khác') allAreas.add(r.area); 
             });
-            
-            selMonth.innerHTML = '<option value="">-- Tất cả --</option>';
-            allUniqueMonths.forEach(m => selMonth.innerHTML += `<option value="${m}">${m}</option>`);
             
             selCat.innerHTML = '<option value="">-- Tất cả --</option>';
             Array.from(allCats).sort().forEach(c => selCat.innerHTML += `<option value="${c}">${c}</option>`);
@@ -431,21 +418,18 @@
             Array.from(validProvinces).sort().forEach(p => selProv.innerHTML += `<option value="${p}" ${p === cProv ? 'selected' : ''}>${p}</option>`);
         }
 
-        // Xác định danh sách các tháng sẽ hiển thị cột trên bảng
-        let displayMonths = cMonth ? [cMonth] : allUniqueMonths;
-        renderTableHead(displayMonths);
+        renderTableHead();
 
         activeDistrictName = null; 
-        currentAggregatedData = aggregateDataWithFilters(cMonth, cCat, cDist, cArea, cProv);
-        renderTableRows(currentAggregatedData, displayMonths); 
+        currentAggregatedData = aggregateDataWithFilters(cCat, cDist, cArea, cProv);
+        renderTableRows(currentAggregatedData); 
         renderMapState(cProv); 
     }
 
-    function aggregateDataWithFilters(selMonth, selCat, selNPP, selArea, selProv) {
+    function aggregateDataWithFilters(selCat, selNPP, selArea, selProv) {
         let districtGroups = {};
 
         rawCustomerRecords.forEach(r => {
-            if (selMonth && r.month !== selMonth) return;
             if (selCat && r.cat !== selCat) return;
             if (selArea && r.area !== selArea) return;
             if (selProv && r.prov !== selProv) return;
@@ -510,9 +494,9 @@
         renderMapState(selProv);
     }
 
-    function renderTableRows(rowsData, displayMonths) {
+    function renderTableRows(rowsData) {
         const tbody = document.getElementById('summary-body'); 
-        const totalCols = 5 + displayMonths.length;
+        const totalCols = 5 + allUniqueMonths.length;
         if (rowsData.length === 0) { 
             tbody.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;">Không tìm thấy dữ liệu.</td></tr>`; 
             return; 
@@ -523,29 +507,28 @@
         rowsData.sort((a, b) => b.totalRev - a.totalRev).forEach((p, index) => {
             let distId = `dist_${index}`; 
             
-            // Render từng ô doanh số theo tháng cho cấp Quận/Huyện
-            let monthTdsDist = displayMonths.map(m => `<td class="num-right text-green">${(p.monthRev[m] || 0).toLocaleString()} đ</td>`).join('');
+            // Làm tròn và loại bỏ dấu phẩy
+            let monthTdsDist = allUniqueMonths.map(m => `<td class="num-right text-green">${Math.round(p.monthRev[m] || 0)} đ</td>`).join('');
             
             htmlString += `<tr id="row-${distId}" class="district-row" onclick="toggleWards('${distId}', '${p.normDist}')">
                 <td>${p.prov}</td>
                 <td style="font-weight:bold;"><span class="toggle-icon" id="icon-${distId}">[+]</span> ${p.dist}</td>
                 <td style="color:var(--text-muted);">-- Tổng Hợp --</td>
-                <td class="num-right text-orange">${p.ordered.toLocaleString()}</td>
+                <td class="num-right text-orange">${p.ordered}</td>
                 ${monthTdsDist}
-                <td class="num-right text-green">${p.totalRev.toLocaleString()} đ</td>
+                <td class="num-right text-green">${Math.round(p.totalRev)} đ</td>
             </tr>`;
 
-            // Render từng ô doanh số theo tháng cho cấp Phường/Xã
             p.wardsData.forEach(w => { 
-                let monthTdsWard = displayMonths.map(m => `<td class="num-right text-green">${(w.monthRev[m] || 0).toLocaleString()} đ</td>`).join('');
+                let monthTdsWard = allUniqueMonths.map(m => `<td class="num-right text-green">${Math.round(w.monthRev[m] || 0)} đ</td>`).join('');
                 
                 htmlString += `<tr class="ward-row ward-row-${distId}">
                     <td></td>
                     <td style="text-align:right; color:var(--border-color);">↳</td>
                     <td>${w.wardName}</td>
-                    <td class="num-right" style="color:var(--color-primary);">${w.ordered.toLocaleString()}</td>
+                    <td class="num-right" style="color:var(--color-primary);">${w.ordered}</td>
                     ${monthTdsWard}
-                    <td class="num-right text-green">${w.totalRev.toLocaleString()} đ</td>
+                    <td class="num-right text-green">${Math.round(w.totalRev)} đ</td>
                 </tr>`; 
             });
         });
@@ -555,6 +538,9 @@
     async function renderMapState(selectedProvince) {
         const loader = document.getElementById('map-loader'); loader.style.display = 'block';
         try {
+            // Xác định tháng mới nhất (Latest Month)
+            let latestMonth = allUniqueMonths.length > 0 ? allUniqueMonths[allUniqueMonths.length - 1] : "";
+
             if (activeDistrictName && selectedProvince) {
                 let wardMapData = {};
                 let normSelectedProv = normalizeAdminName(selectedProvince);
@@ -569,6 +555,8 @@
                     
                     f.properties._mapOrdered = match ? match.ordered : 0; 
                     f.properties._mapTotalRev = match ? match.totalRev : 0; 
+                    f.properties._mapLatestRev = match ? (match.monthRev[latestMonth] || 0) : 0; // Map theo tháng mới nhất
+                    f.properties._latestMonthLabel = latestMonth;
                     f.properties._mapLabelName = wName; 
                     f.properties._mapLabel = `<span style='color:var(--text-muted);'>Phường/Xã:</span> <span style='font-size:11px; font-weight:bold;'>${wName}</span>`;
                     return f;
@@ -587,6 +575,8 @@
 
                     f.properties._mapOrdered = match ? match.ordered : 0; 
                     f.properties._mapTotalRev = match ? match.totalRev : 0; 
+                    f.properties._mapLatestRev = match ? (match.monthRev[latestMonth] || 0) : 0; // Map theo tháng mới nhất
+                    f.properties._latestMonthLabel = latestMonth;
                     f.properties._mapLabelName = dName;
                     f.properties._mapLabel = `<span style='color:var(--text-muted);'>Quận/Huyện:</span> <span style='font-size:11px; font-weight:bold;'>${dName}</span>`;
                     f.properties._normDist = dNorm; 
@@ -597,9 +587,10 @@
             else {
                 let provAgg = {};
                 currentAggregatedData.forEach(d => {
-                    if (!provAgg[d.normProv]) provAgg[d.normProv] = { ordered: 0, totalRev: 0, realName: d.prov };
+                    if (!provAgg[d.normProv]) provAgg[d.normProv] = { ordered: 0, totalRev: 0, latestRev: 0, realName: d.prov };
                     provAgg[d.normProv].ordered += d.ordered; 
                     provAgg[d.normProv].totalRev += d.totalRev;
+                    provAgg[d.normProv].latestRev += (d.monthRev[latestMonth] || 0);
                 });
 
                 let mapFeatures = provinceGeoData.features.map(f => {
@@ -609,25 +600,17 @@
 
                     f.properties._mapOrdered = match ? match.ordered : 0; 
                     f.properties._mapTotalRev = match ? match.totalRev : 0;
+                    f.properties._mapLatestRev = match ? match.latestRev : 0; // Map theo tháng mới nhất
+                    f.properties._latestMonthLabel = latestMonth;
                     f.properties._mapLabelName = match ? match.realName : pName; 
                     f.properties._mapLabel = `<span style='color:var(--text-muted);'>Tỉnh/TP:</span> <span style='font-size:11px; font-weight:bold;'>${f.properties._mapLabelName}</span>`;
                     f.properties._normProv = pNorm; 
                     return f;
-                }).filter(f => f.properties._mapTotalRev > 0);
+                }).filter(f => f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0);
 
                 renderMapLayer(mapFeatures, 'province');
             }
         } catch (err) { console.error(err); } finally { loader.style.display = 'none'; }
-    }
-
-    function mapColorScale(revenue) { 
-        return revenue >= 500000000 ? '#7f1d1d' : 
-               revenue >= 100000000 ? '#b91c1c' : 
-               revenue >= 50000000  ? '#ea580c' : 
-               revenue >= 20000000  ? '#f59e0b' : 
-               revenue >= 5000000   ? '#fcd34d' : 
-               revenue >  0         ? '#fef08a' : 
-                                      'rgba(255,255,255,0.01)'; 
     }
 
     function toggleLabels() {
@@ -636,18 +619,56 @@
         else map.removeLayer(labelGroup);
     }
 
+    // Khởi tạo Legend Gradient Động
+    function updateDynamicLegend(maxRev, latestMonthLabel) {
+        if (currentLegend) map.removeControl(currentLegend);
+        
+        currentLegend = L.control({position: 'bottomleft'});
+        currentLegend.onAdd = function (map) {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = `
+                <h4>DS Tháng ${latestMonthLabel}</h4>
+                <div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 8px; font-weight:bold;">
+                    <span>0 đ</span>
+                    <span>${Math.round(maxRev)} đ</span>
+                </div>
+                <div style="background: linear-gradient(to right, rgba(255,255,255,0.3) 0%, hsl(60,100%,85%) 5%, hsl(0,100%,40%) 100%); height: 12px; width: 100%; border-radius:3px; border:1px solid rgba(0,0,0,0.2);"></div>
+            `;
+            return div;
+        };
+        currentLegend.addTo(map);
+    }
+
     function renderMapLayer(featuresList, level) {
         if (geoJsonLayer) map.removeLayer(geoJsonLayer); 
         labelGroup.clearLayers();
 
         let displayCollection = turf.featureCollection(featuresList);
 
-        geoJsonLayer = L.geoJSON(displayCollection, {
-            style: function (f) { return { fillColor: mapColorScale(f.properties._mapTotalRev), weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.65 }; },
-            onEachFeature: function (f, layer) { 
-                layer.bindPopup(`<div style="font-size:9px; line-height:1.4;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:4px 0;">Lên đơn: <b style="color:var(--color-primary);">${f.properties._mapOrdered.toLocaleString()}</b> CH<br>Tổng Doanh Số: <b style="color:#059669;">${f.properties._mapTotalRev.toLocaleString()} đ</b></div>`); 
+        // Tính Max Revenue của khung nhìn hiện tại (để dải màu trượt linh hoạt)
+        let maxRev = Math.max(...featuresList.map(f => f.properties._mapLatestRev));
+        if (maxRev <= 0) maxRev = 1000000; // Cố định Min Max để tránh lỗi chia 0
+        
+        let sampleMonth = featuresList.length > 0 ? featuresList[0].properties._latestMonthLabel : "";
+        updateDynamicLegend(maxRev, sampleMonth);
 
-                if (f.properties._mapTotalRev > 0) {
+        geoJsonLayer = L.geoJSON(displayCollection, {
+            style: function (f) { 
+                let rev = f.properties._mapLatestRev;
+                let fillColor = 'rgba(255,255,255,0.01)';
+                if (rev > 0) {
+                    // Thuật toán nội suy dải màu trượt từ Vàng (Hue 60) sang Đỏ đậm (Hue 0)
+                    let ratio = Math.pow(rev / maxRev, 0.5); // Dùng căn bậc 2 giúp phân bổ màu hiển thị mượt hơn
+                    let hue = 60 * (1 - ratio);
+                    let lightness = 85 - 45 * ratio; // Giảm độ sáng để đỏ đậm hơn
+                    fillColor = `hsl(${hue}, 100%, ${lightness}%)`;
+                }
+                return { fillColor: fillColor, weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.75 }; 
+            },
+            onEachFeature: function (f, layer) { 
+                layer.bindPopup(`<div style="font-size:9px; line-height:1.4;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:4px 0;">Lên đơn: <b style="color:var(--color-primary);">${f.properties._mapOrdered}</b> CH<br>DS Tháng ${f.properties._latestMonthLabel}: <b style="color:#059669;">${Math.round(f.properties._mapLatestRev)} đ</b><br><span style="color:var(--text-muted); font-size: 8px;">(Tổng DS: ${Math.round(f.properties._mapTotalRev)} đ)</span></div>`); 
+
+                if (f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0) {
                     let center = turf.centroid(f).geometry.coordinates;
                     let text = String(f.properties._mapLabelName).replace(/(Tỉnh|Thành phố|Quận|Huyện|Thị xã|Phường|Xã)\s+/g, '');
                     let tooltip = L.tooltip({ permanent: true, direction: 'center', className: 'region-label' })
@@ -683,22 +704,6 @@
                 [turf.bbox(displayCollection)[3], turf.bbox(displayCollection)[2]]
             ], { padding: [10, 10], maxZoom: 13 });
         }
-    }
-
-    function addMapLegend() {
-        const legend = L.control({position: 'bottomleft'});
-        legend.onAdd = function (map) {
-            const div = L.DomUtil.create('div', 'legend');
-            const labels = ['0 đ', '> 0 đ', '> 5 Triệu', '> 20 Triệu', '> 50 Triệu', '> 100 Triệu', '> 500 Triệu'];
-            const colors = ['rgba(255,255,255,0.5)', '#fef08a', '#fcd34d', '#f59e0b', '#ea580c', '#b91c1c', '#7f1d1d'];
-
-            div.innerHTML = '<h4>Tổng Doanh Số</h4>';
-            for (let i = 0; i < colors.length; i++) {
-                div.innerHTML += `<i style="background:${colors[i]}"></i> ${labels[i]}<br>`;
-            }
-            return div;
-        };
-        legend.addTo(map);
     }
 </script>
 </body>
