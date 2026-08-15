@@ -148,7 +148,7 @@
         <div id="table-container">
             <table id="summary-table">
                 <thead id="summary-head">
-                    <!-- Được render qua JS -->
+                    <!-- Sẽ được render qua JS -->
                 </thead>
                 <tbody id="summary-body">
                     <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 40px;" id="lbl-init-data">Nhấn nút "Nạp Dữ Liệu" để tải hệ thống.</td></tr>
@@ -156,7 +156,7 @@
             </table>
         </div>
     </div>
-    <div id="map-panel"><div id="map-loader">⌛ Đang tính toán...</div><div id="map"></div></div>
+    <div id="map-panel"><div id="map-loader" id="lbl-calculating">⌛ Đang tính toán...</div><div id="map"></div></div>
 </div>
 
 <script>
@@ -169,7 +169,7 @@
             thProv: "Tỉnh / TP", thDist: "Quận / Huyện", thWard: "Phường / Xã", thOrdered: "Lên Đơn (CH)", thTotal: "Tổng Doanh Số", unit: "Unit: VND",
             totalRow: "-- Tổng Hợp --", noData: "Không tìm thấy dữ liệu.", initData: "Nhấn nút 'Nạp Dữ Liệu' để tải hệ thống.",
             calc: "⌛ Đang tính toán...", mapOrdered: "Lên đơn", mapDS: "DS Tháng", mapTotal: "Tổng DS", selected: "Đã chọn", search: "Tìm kiếm...",
-            legendTitle: "DS Tháng", unmappedReason: "Chua khop tren GADM"
+            legendTitle: "DS Tháng", unmappedReason: "Chua khop tren GADM", transparentZero: "(0 = Trong suốt)"
         },
         en: {
             title: "COVERAGE REPORT", cat: "Category", area: "Area", distributor: "Distributor", province: "Province / City",
@@ -178,7 +178,7 @@
             thProv: "Province / City", thDist: "District", thWard: "Ward", thOrdered: "Ordered (Outlets)", thTotal: "Total Sales", unit: "Unit: VND",
             totalRow: "-- Total --", noData: "No data found.", initData: "Click 'Load Data' to start.",
             calc: "⌛ Calculating...", mapOrdered: "Ordered", mapDS: "Sales Month", mapTotal: "Total Sales", selected: "Selected", search: "Search...",
-            legendTitle: "Sales M", unmappedReason: "Unmapped on GADM"
+            legendTitle: "Sales M", unmappedReason: "Unmapped on GADM", transparentZero: "(0 = Transparent)"
         }
     };
     let curLang = 'vi';
@@ -399,7 +399,6 @@
             let workbook = XLSX.read(arrBuffer, { type: 'array' });
             let sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
 
-            // Pass 1: Gather NPP totals
             let tempRecords = [];
             let nppSales = {};
             
@@ -414,14 +413,12 @@
                 tempRecords.push({row, cusCode, npp, total});
             }
 
-            // Identify Low Sales NPPs (< 50 Million across all months)
             const LOW_THRESHOLD = 50000000;
             let lowNPPs = new Set();
             for (let [npp, total] of Object.entries(nppSales)) {
                 if (total < LOW_THRESHOLD) lowNPPs.add(npp);
             }
 
-            // Pass 2: Map to Records
             rawCustomerRecords = [];
             let unmappedMap = new Map(); 
             let monthsSet = new Set();
@@ -475,7 +472,6 @@
                 btnExport.style.display = 'none';
             }
 
-            // Init MultiSelect instances if not exist
             if(!msCat) {
                 msCat = new MultiSelect('ms-cat', i18n[curLang].all, () => runFilter('cat'));
                 msArea = new MultiSelect('ms-area', i18n[curLang].all, () => runFilter('area'));
@@ -698,7 +694,7 @@
                 let distData = currentAggregatedData.find(d => d.normProv === normSelectedProv && d.normDist === activeDistrictName);
                 if (distData) distData.wardsData.forEach(w => wardMapData[w.normWard] = w);
 
-                let mapFeatures = masterGeoJSON3.features.filter(f => f.properties.COUNTRY && normalizeAdminName(f.properties.COUNTRY) === normSelectedProv && f.properties.NL_NAME_1 && normalizeAdminName(f.properties.NL_NAME_1) === activeDistrictName).map(f => {
+                let mapFeatures = masterGeoJSON3.features.filter(f => f.properties.COUNTRY && normalizeAdminName(f.properties.COUNTRY) === normSelectedProv && f.properties.NAME_1 && normalizeAdminName(f.properties.NAME_1) === activeDistrictName).map(f => {
                     let wName = f.properties.NAME_2 || "Chưa rõ";
                     let wNorm = normalizeAdminName(wName);
                     let match = wardMapData[wNorm];
@@ -721,7 +717,7 @@
 
                 let mapFeatures = districtGeoData.features.filter(f => f.properties.COUNTRY && normSelectedProvs.includes(normalizeAdminName(f.properties.COUNTRY))).map(f => {
                     let pNorm = normalizeAdminName(f.properties.COUNTRY);
-                    let dName = f.properties.NL_NAME_1 || f.properties.NAME_1 || "Chưa rõ"; 
+                    let dName = f.properties.NAME_1 || "Chưa rõ"; 
                     let dNorm = normalizeAdminName(dName);
                     let match = distMapData[`${pNorm}|${dNorm}`];
 
@@ -747,7 +743,7 @@
                 });
 
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let pName = f.properties.COUNTRY || f.properties.NAME_1 || "Chưa rõ"; 
+                    let pName = f.properties.GID_0 || "Chưa rõ"; 
                     let pNorm = normalizeAdminName(pName);
                     let match = provAgg[pNorm];
 
@@ -781,10 +777,11 @@
             div.innerHTML = `
                 <h4>${langObj.legendTitle} ${latestMonthLabel}</h4>
                 <div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 8px; font-weight:bold;">
-                    <span>0</span>
+                    <span>> 0</span>
                     <span>${formatNumber(maxRev)}</span>
                 </div>
-                <div style="background: linear-gradient(to right, rgba(255,255,255,0.3) 0%, hsl(60,100%,85%) 5%, hsl(0,100%,40%) 100%); height: 12px; width: 100%; border-radius:3px; border:1px solid rgba(0,0,0,0.2);"></div>
+                <div style="background: linear-gradient(to right, hsl(60,100%,50%) 0%, hsl(0,100%,50%) 100%); height: 12px; width: 100%; border-radius:3px; border:1px solid rgba(0,0,0,0.2);"></div>
+                <div style="margin-top: 5px; font-size: 8px; color: var(--text-muted); text-align: center;">${langObj.transparentZero}</div>
             `;
             return div;
         };
@@ -808,14 +805,14 @@
         geoJsonLayer = L.geoJSON(displayCollection, {
             style: function (f) { 
                 let rev = f.properties._mapLatestRev;
-                let fillColor = 'rgba(255,255,255,0.01)';
                 if (rev > 0) {
                     let ratio = Math.pow(rev / maxRev, 0.5); 
                     let hue = 60 * (1 - ratio);
-                    let lightness = 85 - 45 * ratio; 
-                    fillColor = `hsl(${hue}, 100%, ${lightness}%)`;
+                    let fillColor = `hsl(${hue}, 100%, 50%)`;
+                    return { fillColor: fillColor, weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.75 }; 
+                } else {
+                    return { fillColor: 'transparent', weight: 0.5, opacity: 0.5, color: '#94a3b8', fillOpacity: 0 }; 
                 }
-                return { fillColor: fillColor, weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.75 }; 
             },
             onEachFeature: function (f, layer) { 
                 layer.bindPopup(`<div style="font-size:9px; line-height:1.4;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:4px 0;">${langObj.mapOrdered}: <b style="color:var(--color-primary);">${f.properties._mapOrdered}</b> CH<br>${langObj.mapDS} ${f.properties._latestMonthLabel}: <b style="color:#059669;">${formatNumber(f.properties._mapLatestRev)}</b><br><span style="color:var(--text-muted); font-size: 8px;">(${langObj.mapTotal}: ${formatNumber(f.properties._mapTotalRev)})</span></div>`); 
