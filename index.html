@@ -166,7 +166,7 @@
     let labelGroup = L.layerGroup().addTo(map);
 
     let rawCustomerRecords = []; 
-    let unmappedRecords = []; // Lưu các dòng không map được
+    let unmappedRecords = []; 
     let currentAggregatedData = []; 
     let activeDistrictName = null; 
     let isLabelVisible = true;
@@ -194,9 +194,9 @@
         // 2. Cắt bỏ tiền tố/hậu tố hành chính
         s = s.replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.|tt)\s+/g, "");
         s = s.replace(/\s+(thi xa|tp|thanh pho|huyen|quan|xa|phuong|thi tran)$/g, "");
-        s = s.replace(/[()]/g, ""); // Xóa dấu ngoặc
-        s = s.replace(/[^a-z0-9\s]/g, ""); // Xóa ký tự đặc biệt
-        s = s.replace(/\s+/g, " "); // Thu gọn khoảng trắng
+        s = s.replace(/[()]/g, ""); 
+        s = s.replace(/[^a-z0-9\s]/g, ""); 
+        s = s.replace(/\s+/g, " "); 
         return s.trim();
     }
 
@@ -245,17 +245,14 @@
                 let w = f.properties.NAME_2 || "";
                 let type = f.properties.VARNAME_3 || "";
 
-                // Exact key
                 let exactKey = `${removeAccents(p)}|${removeAccents(d)}|${removeAccents(w)}`;
                 gadmLookupExact[exactKey] = true;
                 
-                // Nếu có loại (VD: Thị trấn, Xã) thì ghép thêm type để check exact như "Long Phú (Thị trấn)"
                 if(type) {
                     let exactTypeKey = `${removeAccents(p)}|${removeAccents(d)}|${removeAccents(w)} (${removeAccents(type)})`;
                     gadmLookupExact[exactTypeKey] = true;
                 }
 
-                // Normalized Key
                 let normKey = `${normalizeAdminName(p)}|${normalizeAdminName(d)}|${normalizeAdminName(w)}`;
                 gadmLookupNorm[normKey] = true;
             });
@@ -275,7 +272,6 @@
 
             updateLoadingUI("Đang chuẩn hóa & Map dữ liệu...", 90);
             
-            // Xử lý từng dòng (Bỏ qua dòng Header)
             for (let i = 1; i < sheetData.length; i++) {
                 let row = sheetData[i];
                 if (!row || row.length < 12) continue;
@@ -287,13 +283,13 @@
                 let total = parseFloat(row[5]) || 0;
                 
                 let area = row[8] ? String(row[8]).trim() : "Khác";
-                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ";
-                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ";
-                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ";
+                let prov = row[9] ? String(row[9]).trim() : "Chưa rõ"; // Cột J: Tỉnh/TP chuẩn
+                let dist = row[10] ? String(row[10]).trim() : "Chưa rõ"; // Cột K: Quận/Huyện
+                let ward = row[11] ? String(row[11]).trim() : "Chưa rõ"; // Cột L: Phường/Xã
 
                 if (!cusCode || total === 0) continue;
 
-                // Kiểm tra map vào GADM
+                // Kiểm tra xem Phường/Xã có khớp với GADM không
                 let isMapped = false;
                 let exactKey = `${removeAccents(prov)}|${removeAccents(dist)}|${removeAccents(ward)}`;
                 let normKey = `${normalizeAdminName(prov)}|${normalizeAdminName(dist)}|${normalizeAdminName(ward)}`;
@@ -302,26 +298,28 @@
                     isMapped = true;
                 }
 
-                // Ghi nhận dữ liệu chuẩn
+                // Luôn giữ Tỉnh/TP từ Cột J!
                 let record = { 
                     cusCode: cusCode, npp: npp, month: month, cat: cat, total: total, 
                     area: area, 
-                    prov: isMapped ? prov : "Chưa rõ", 
-                    dist: isMapped ? dist : "Chưa rõ", 
-                    ward: isMapped ? ward : "Chưa rõ",
+                    prov: prov, // LẤY THẲNG CỘT J
+                    dist: dist, // LẤY THẲNG CỘT K
+                    ward: ward, // LẤY THẲNG CỘT L
                     normProv: normalizeAdminName(prov),
                     normDist: normalizeAdminName(dist),
-                    normWard: normalizeAdminName(ward)
+                    normWard: normalizeAdminName(ward),
+                    isMapped: isMapped
                 };
 
                 rawCustomerRecords.push(record);
 
+                // Nếu chưa map được cấp Phường/Xã thì đưa vào danh sách kiểm tra
                 if (!isMapped && prov !== "Chưa rõ") {
                     unmappedRecords.push({ cuscode: cusCode, npp: npp, month: month, cat: cat, total: total, area: area, prov: prov, dist: dist, ward: ward });
                 }
             }
 
-            // Hiện nút Export nếu có data lỗi
+            // Hiện nút Export nếu có dòng chưa khớp GADM
             const btnExport = document.getElementById('btnExport');
             if (unmappedRecords.length > 0) {
                 btnExport.style.display = 'inline-block';
@@ -343,12 +341,11 @@
         }
     }
 
-    // Tải file CSV kiểm tra lỗi
     function downloadUnmapped() {
         if (unmappedRecords.length === 0) return;
         let csv = "Cuscode,NPP,Thang,NhanHang,DoanhSo,KhuVuc,TinhThanh,QuanHuyen,PhuongXa,LyDo\n";
         unmappedRecords.forEach(r => {
-            csv += `"${r.cuscode}","${r.npp}","${r.month}","${r.cat}",${r.total},"${r.area}","${r.prov}","${r.dist}","${r.ward}","Khong khop tren GADM"\n`;
+            csv += `"${r.cuscode}","${r.npp}","${r.month}","${r.cat}",${r.total},"${r.area}","${r.prov}","${r.dist}","${r.ward}","Chua khop cap Phuong/Xa tren GADM"\n`;
         });
         let blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
         let link = document.createElement("a");
@@ -357,7 +354,6 @@
         link.click();
     }
 
-    // LOGIC CASCADING FILTER
     function runFilter(source) {
         if (rawCustomerRecords.length === 0) return; 
 
@@ -370,7 +366,6 @@
         let cMonth = selMonth.value; let cCat = selCat.value;
         let cArea = selArea.value; let cDist = selDist.value; let cProv = selProv.value;
 
-        // Khởi tạo các Dropdown tĩnh ban đầu
         if (!source) {
             let allMonths = new Set(); let allCats = new Set(); let allAreas = new Set();
             rawCustomerRecords.forEach(r => { 
@@ -389,7 +384,6 @@
             Array.from(allAreas).sort().forEach(a => selArea.innerHTML += `<option value="${a}">${a}</option>`);
         }
 
-        // Đổ danh sách NPP theo Area
         if (source === 'area' || !source) {
             let validDists = new Set();
             rawCustomerRecords.forEach(r => {
@@ -400,7 +394,6 @@
             Array.from(validDists).sort().forEach(d => selDist.innerHTML += `<option value="${d}" ${d === cDist ? 'selected' : ''}>${d}</option>`);
         }
 
-        // Đổ danh sách Tỉnh theo Area & NPP
         if (source === 'area' || source === 'dist' || !source) {
             let validProvinces = new Set();
             rawCustomerRecords.forEach(r => {
@@ -609,7 +602,6 @@
 
                 layer.on('click', function() {
                     if (level === 'province') {
-                        // Tìm option value gốc tương ứng
                         let selProv = document.getElementById('sel-province');
                         for(let opt of selProv.options) {
                             if(normalizeAdminName(opt.value) === f.properties._normProv) {
