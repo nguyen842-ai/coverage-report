@@ -383,7 +383,8 @@
 
             masterGeoJSON3.features.forEach(f => {
                 let p = f.properties.COUNTRY || ""; 
-                let d = f.properties.NAME_1 || ""; // FIXED
+                // CHÚ Ý: GADM cấp 3 sử dụng NL_NAME_1 cho tên Quận/Huyện có dấu
+                let d = f.properties.NL_NAME_1 || ""; 
                 let w = f.properties.NAME_2 || ""; 
                 let type = f.properties.VARNAME_3 || "";
 
@@ -696,7 +697,11 @@
                 let distData = currentAggregatedData.find(d => d.normProv === normSelectedProv && d.normDist === activeDistrictName);
                 if (distData) distData.wardsData.forEach(w => wardMapData[w.normWard] = w);
 
-                let mapFeatures = masterGeoJSON3.features.filter(f => f.properties.COUNTRY && normalizeAdminName(f.properties.COUNTRY) === normSelectedProv && f.properties.NAME_1 && normalizeAdminName(f.properties.NAME_1) === activeDistrictName).map(f => {
+                let mapFeatures = masterGeoJSON3.features.filter(f => {
+                    let pName = f.properties.COUNTRY || "";
+                    let dName = f.properties.NL_NAME_1 || ""; // Sử dụng NL_NAME_1 cho GADM cấp 3
+                    return normalizeAdminName(pName) === normSelectedProv && normalizeAdminName(dName) === activeDistrictName;
+                }).map(f => {
                     let wName = f.properties.NAME_2 || "Chưa rõ";
                     let wNorm = normalizeAdminName(wName);
                     let match = wardMapData[wNorm];
@@ -719,7 +724,7 @@
 
                 let mapFeatures = districtGeoData.features.filter(f => f.properties.COUNTRY && normSelectedProvs.includes(normalizeAdminName(f.properties.COUNTRY))).map(f => {
                     let pNorm = normalizeAdminName(f.properties.COUNTRY);
-                    let dName = f.properties.NAME_1 || "Chưa rõ"; 
+                    let dName = f.properties.NAME_1 || "Chưa rõ"; // Sử dụng NAME_1 cho GADM cấp 2
                     let dNorm = normalizeAdminName(dName);
                     let match = distMapData[`${pNorm}|${dNorm}`];
 
@@ -744,9 +749,8 @@
                     provAgg[d.normProv].latestRev += (d.monthRev[latestMonth] || 0);
                 });
 
-                // FIXED: Removed the filter logic here so areas with 0 revenue are still rendered
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let pName = f.properties.COUNTRY || "Chưa rõ"; // FIXED
+                    let pName = f.properties.COUNTRY || "Chưa rõ"; // Sử dụng COUNTRY cho GADM cấp 1
                     let pNorm = normalizeAdminName(pName);
                     let match = provAgg[pNorm];
 
@@ -814,14 +818,12 @@
                     let fillColor = `hsl(${hue}, 100%, 50%)`;
                     return { fillColor: fillColor, weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.75 }; 
                 } else {
-                    // FIXED: Show black stroke with transparent fill for 0 revenue
                     return { fillColor: 'transparent', weight: 1, opacity: 1, color: '#000000', fillOpacity: 0 }; 
                 }
             },
             onEachFeature: function (f, layer) { 
                 layer.bindPopup(`<div style="font-size:9px; line-height:1.4;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:4px 0;">${langObj.mapOrdered}: <b style="color:var(--color-primary);">${f.properties._mapOrdered}</b> CH<br>${langObj.mapDS} ${f.properties._latestMonthLabel}: <b style="color:#059669;">${formatNumber(f.properties._mapLatestRev)}</b><br><span style="color:var(--text-muted); font-size: 8px;">(${langObj.mapTotal}: ${formatNumber(f.properties._mapTotalRev)})</span></div>`); 
 
-                // FIXED: Removed 'if (f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0)' to always show labels
                 let center = turf.centroid(f).geometry.coordinates;
                 let text = String(f.properties._mapLabelName).replace(/(Tỉnh|Thành phố|Quận|Huyện|Thị xã|Phường|Xã)\s+/g, '');
                 let tooltip = L.tooltip({ permanent: true, direction: 'center', className: 'region-label' })
