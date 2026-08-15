@@ -382,8 +382,10 @@
             let gadmLookupNorm = {};
 
             masterGeoJSON3.features.forEach(f => {
-                let p = f.properties.COUNTRY || ""; let d = f.properties.NL_NAME_1 || "";
-                let w = f.properties.NAME_2 || ""; let type = f.properties.VARNAME_3 || "";
+                let p = f.properties.COUNTRY || ""; 
+                let d = f.properties.NAME_1 || ""; // FIXED
+                let w = f.properties.NAME_2 || ""; 
+                let type = f.properties.VARNAME_3 || "";
 
                 gadmLookupExact[`${removeAccents(p)}|${removeAccents(d)}|${removeAccents(w)}`] = true;
                 if(type) gadmLookupExact[`${removeAccents(p)}|${removeAccents(d)}|${removeAccents(w)} (${removeAccents(type)})`] = true;
@@ -742,8 +744,9 @@
                     provAgg[d.normProv].latestRev += (d.monthRev[latestMonth] || 0);
                 });
 
+                // FIXED: Removed the filter logic here so areas with 0 revenue are still rendered
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let pName = f.properties.GID_0 || "Chưa rõ"; 
+                    let pName = f.properties.COUNTRY || "Chưa rõ"; // FIXED
                     let pNorm = normalizeAdminName(pName);
                     let match = provAgg[pNorm];
 
@@ -755,7 +758,7 @@
                     f.properties._mapLabel = `<span style='color:var(--text-muted);'>${langObj.thProv}:</span> <span style='font-size:11px; font-weight:bold;'>${f.properties._mapLabelName}</span>`;
                     f.properties._normProv = pNorm; 
                     return f;
-                }).filter(f => f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0);
+                });
 
                 renderMapLayer(mapFeatures, 'province');
             }
@@ -811,20 +814,20 @@
                     let fillColor = `hsl(${hue}, 100%, 50%)`;
                     return { fillColor: fillColor, weight: 1, opacity: 1, color: '#000000', fillOpacity: 0.75 }; 
                 } else {
-                    return { fillColor: 'transparent', weight: 0.5, opacity: 0.5, color: '#94a3b8', fillOpacity: 0 }; 
+                    // FIXED: Show black stroke with transparent fill for 0 revenue
+                    return { fillColor: 'transparent', weight: 1, opacity: 1, color: '#000000', fillOpacity: 0 }; 
                 }
             },
             onEachFeature: function (f, layer) { 
                 layer.bindPopup(`<div style="font-size:9px; line-height:1.4;">${f.properties._mapLabel}<hr style="border-color:var(--border-color); margin:4px 0;">${langObj.mapOrdered}: <b style="color:var(--color-primary);">${f.properties._mapOrdered}</b> CH<br>${langObj.mapDS} ${f.properties._latestMonthLabel}: <b style="color:#059669;">${formatNumber(f.properties._mapLatestRev)}</b><br><span style="color:var(--text-muted); font-size: 8px;">(${langObj.mapTotal}: ${formatNumber(f.properties._mapTotalRev)})</span></div>`); 
 
-                if (f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0) {
-                    let center = turf.centroid(f).geometry.coordinates;
-                    let text = String(f.properties._mapLabelName).replace(/(Tỉnh|Thành phố|Quận|Huyện|Thị xã|Phường|Xã)\s+/g, '');
-                    let tooltip = L.tooltip({ permanent: true, direction: 'center', className: 'region-label' })
-                                   .setContent(text)
-                                   .setLatLng([center[1], center[0]]);
-                    labelGroup.addLayer(tooltip);
-                }
+                // FIXED: Removed 'if (f.properties._mapLatestRev > 0 || f.properties._mapTotalRev > 0)' to always show labels
+                let center = turf.centroid(f).geometry.coordinates;
+                let text = String(f.properties._mapLabelName).replace(/(Tỉnh|Thành phố|Quận|Huyện|Thị xã|Phường|Xã)\s+/g, '');
+                let tooltip = L.tooltip({ permanent: true, direction: 'center', className: 'region-label' })
+                               .setContent(text)
+                               .setLatLng([center[1], center[0]]);
+                labelGroup.addLayer(tooltip);
 
                 layer.on('click', function() {
                     if (level === 'province') {
