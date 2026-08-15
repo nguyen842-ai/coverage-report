@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coverage - Compact & Cascade (Map by Latest Month & Multiselect)</title>
+    <title>Coverage - Compact & Cascade (Map by Latest Month & Gradient)</title>
 
     <!-- Libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -156,7 +156,7 @@
             </table>
         </div>
     </div>
-    <div id="map-panel"><div id="map-loader" id="lbl-calculating">⌛ Đang tính toán...</div><div id="map"></div></div>
+    <div id="map-panel"><div id="map-loader">⌛ Đang tính toán...</div><div id="map"></div></div>
 </div>
 
 <script>
@@ -304,6 +304,7 @@
 
     let masterGeoJSON3 = null; let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let labelGroup = L.layerGroup().addTo(map);
+    let currentLegend = null; 
 
     let rawCustomerRecords = []; 
     let unmappedRecords = []; 
@@ -697,7 +698,7 @@
                 let distData = currentAggregatedData.find(d => d.normProv === normSelectedProv && d.normDist === activeDistrictName);
                 if (distData) distData.wardsData.forEach(w => wardMapData[w.normWard] = w);
 
-                let mapFeatures = masterGeoJSON3.features.filter(f => normalizeAdminName(f.properties.COUNTRY) === normSelectedProv && normalizeAdminName(f.properties.NL_NAME_1) === activeDistrictName).map(f => {
+                let mapFeatures = masterGeoJSON3.features.filter(f => f.properties.COUNTRY && normalizeAdminName(f.properties.COUNTRY) === normSelectedProv && f.properties.NL_NAME_1 && normalizeAdminName(f.properties.NL_NAME_1) === activeDistrictName).map(f => {
                     let wName = f.properties.NAME_2 || "Chưa rõ";
                     let wNorm = normalizeAdminName(wName);
                     let match = wardMapData[wNorm];
@@ -718,9 +719,9 @@
 
                 currentAggregatedData.forEach(d => { if (normSelectedProvs.includes(d.normProv)) distMapData[`${d.normProv}|${d.normDist}`] = d; });
 
-                let mapFeatures = districtGeoData.features.filter(f => normSelectedProvs.includes(normalizeAdminName(f.properties.COUNTRY))).map(f => {
+                let mapFeatures = districtGeoData.features.filter(f => f.properties.COUNTRY && normSelectedProvs.includes(normalizeAdminName(f.properties.COUNTRY))).map(f => {
                     let pNorm = normalizeAdminName(f.properties.COUNTRY);
-                    let dName = f.properties.NAME_1 || "Chưa rõ"; 
+                    let dName = f.properties.NL_NAME_1 || f.properties.NAME_1 || "Chưa rõ"; 
                     let dNorm = normalizeAdminName(dName);
                     let match = distMapData[`${pNorm}|${dNorm}`];
 
@@ -746,7 +747,7 @@
                 });
 
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let pName = f.properties.GID_0 || "Chưa rõ"; 
+                    let pName = f.properties.COUNTRY || f.properties.NAME_1 || "Chưa rõ"; 
                     let pNorm = normalizeAdminName(pName);
                     let match = provAgg[pNorm];
 
