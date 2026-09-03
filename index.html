@@ -300,7 +300,7 @@
 
     const map = L.map('map', { zoomControl: false }).setView([16.0, 106.0], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2tyt_1_afa9eaf789f617b22b57e86b').addTo(map);
 
     let masterGeoJSON3 = null; let provinceGeoData = null; let districtGeoData = null; 
     let geoJsonLayer = null; let labelGroup = L.layerGroup().addTo(map);
