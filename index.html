@@ -313,18 +313,20 @@
     let activeDistrictName = null; 
     let isLabelVisible = true;
 
+    // BẢN VÁ LỖI 1: Xử lý triệt để chữ "Đ/đ"
     function removeAccents(str) {
-    if (!str) return "";
-    return str.normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .toLowerCase()
-              .replace(/đ/g, 'd') // Thêm dòng này để xử lý riêng chữ đ
-              .trim();
-}
+        if (!str) return "";
+        return str.normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                  .toLowerCase()
+                  .replace(/đ/g, 'd') // Quan trọng: chuyển đ thành d
+                  .trim();
+    }
 
     function normalizeAdminName(str) {
         if (!str) return "";
         let s = removeAccents(str);
+        
         const aliases = { "vung tau": "ba ria vung tau", "hue": "thua thien hue", "hcm": "ho chi minh", "ha noi": "ha noi" };
         if (aliases[s]) return aliases[s];
         
@@ -336,23 +338,18 @@
         return s.trim();
     }
 
-    function normalizeAdminName(str) {
-    if (!str) return "";
-    let s = removeAccents(str);
-    
-    const aliases = { "vung tau": "ba ria vung tau", "hue": "thua thien hue", "hcm": "ho chi minh", "ha noi": "ha noi" };
-    if (aliases[s]) return aliases[s];
-    
-    s = s.replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.|tt)\s+/g, "");
-    s = s.replace(/\s+(thi xa|tp|thanh pho|huyen|quan|xa|phuong|thi tran)$/g, "");
-    s = s.replace(/[()]/g, ""); 
-    
-    // Lúc này "Đà Nẵng" đã thành "da nang" (toàn bộ là a-z) nên đi qua dòng này sẽ an toàn, không bị mất chữ "d"
-    s = s.replace(/[^a-z0-9\s]/g, ""); 
-    
-    s = s.replace(/\s+/g, " "); 
-    return s.trim();
-}
+    // BẢN VÁ LỖI 2: Sắp xếp tháng chính xác (ví dụ 10 > 9)
+    function sortMonths(arr) {
+        return arr.sort((a, b) => {
+            let numA = parseInt(String(a).replace(/[^0-9]/g, ''));
+            let numB = parseInt(String(b).replace(/[^0-9]/g, ''));
+            
+            if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+                return numA - numB;
+            }
+            return String(a).localeCompare(String(b));
+        });
+    }
 
     function updateLoadingUI(msg, percent) {
         document.getElementById('loading-msg').innerText = msg;
@@ -709,7 +706,7 @@
 
                 let mapFeatures = masterGeoJSON3.features.filter(f => {
                     let pName = f.properties.COUNTRY || "";
-                    let dName = f.properties.NL_NAME_1 || ""; // Sử dụng NL_NAME_1 cho GADM cấp 3
+                    let dName = f.properties.NL_NAME_1 || ""; // GADM cấp 3 của bạn dùng NL_NAME_1
                     return normalizeAdminName(pName) === normSelectedProv && normalizeAdminName(dName) === activeDistrictName;
                 }).map(f => {
                     let wName = f.properties.NAME_2 || "Chưa rõ";
@@ -734,7 +731,8 @@
 
                 let mapFeatures = districtGeoData.features.filter(f => f.properties.COUNTRY && normSelectedProvs.includes(normalizeAdminName(f.properties.COUNTRY))).map(f => {
                     let pNorm = normalizeAdminName(f.properties.COUNTRY);
-                    let dName = f.properties.NAME_1 || "Chưa rõ"; // Sử dụng NAME_1 cho GADM cấp 2
+                    // BẢN VÁ LỖI 3: Tìm tên Huyện linh hoạt để tránh lấy mã ID
+                    let dName = f.properties.NL_NAME_1 || f.properties.NAME_1 || "Chưa rõ"; 
                     let dNorm = normalizeAdminName(dName);
                     let match = distMapData[`${pNorm}|${dNorm}`];
 
@@ -760,7 +758,12 @@
                 });
 
                 let mapFeatures = provinceGeoData.features.map(f => {
-                    let pName = f.properties.COUNTRY || "Chưa rõ"; // Sử dụng COUNTRY cho GADM cấp 1
+                    // BẢN VÁ LỖI 4: Tìm tên Tỉnh linh hoạt để tránh lấy mã VNM
+                    let pName = f.properties.NAME_1;
+                    if (!pName || String(pName).startsWith("VNM")) pName = f.properties.COUNTRY;
+                    if (!pName || pName === "Vietnam") pName = f.properties.NL_NAME_1;
+                    if (!pName) pName = "Chưa rõ";
+
                     let pNorm = normalizeAdminName(pName);
                     let match = provAgg[pNorm];
 
