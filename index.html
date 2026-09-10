@@ -314,9 +314,13 @@
     let isLabelVisible = true;
 
     function removeAccents(str) {
-        if (!str) return "";
-        return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    }
+    if (!str) return "";
+    return str.normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase()
+              .replace(/đ/g, 'd') // Thêm dòng này để xử lý riêng chữ đ
+              .trim();
+}
 
     function normalizeAdminName(str) {
         if (!str) return "";
@@ -332,17 +336,23 @@
         return s.trim();
     }
 
-    function sortMonths(arr) {
-        return arr.sort((a, b) => {
-            let partsA = String(a).split('.').map(Number);
-            let partsB = String(b).split('.').map(Number);
-            if (partsA.length === 2 && partsB.length === 2) {
-                if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
-                return partsA[0] - partsB[0];
-            }
-            return String(a).localeCompare(String(b));
-        });
-    }
+    function normalizeAdminName(str) {
+    if (!str) return "";
+    let s = removeAccents(str);
+    
+    const aliases = { "vung tau": "ba ria vung tau", "hue": "thua thien hue", "hcm": "ho chi minh", "ha noi": "ha noi" };
+    if (aliases[s]) return aliases[s];
+    
+    s = s.replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.|tt)\s+/g, "");
+    s = s.replace(/\s+(thi xa|tp|thanh pho|huyen|quan|xa|phuong|thi tran)$/g, "");
+    s = s.replace(/[()]/g, ""); 
+    
+    // Lúc này "Đà Nẵng" đã thành "da nang" (toàn bộ là a-z) nên đi qua dòng này sẽ an toàn, không bị mất chữ "d"
+    s = s.replace(/[^a-z0-9\s]/g, ""); 
+    
+    s = s.replace(/\s+/g, " "); 
+    return s.trim();
+}
 
     function updateLoadingUI(msg, percent) {
         document.getElementById('loading-msg').innerText = msg;
