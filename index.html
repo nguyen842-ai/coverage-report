@@ -392,15 +392,15 @@
 
         try {
             if (!masterGeoJSON3) {
-                updateLoadingUI("Đang tải dữ liệu GADM...", 10);
+                updateLoadingUI("Đang tải dữ liệu Bản đồ...", 10);
                 masterGeoJSON3 = await fetchSupabaseGeoJSON(GEOJSON_SCAN);
             }
             if (!districtGeoData) {
-                updateLoadingUI("Đang tải dữ liệu Huyện...", 30);
+                updateLoadingUI("Đang tải dữ liệu Quận/Huyện...", 30);
                 districtGeoData = await fetchSupabaseGeoJSON(GEOJSON_DIST);
             }
             if (!provinceGeoData) {
-                updateLoadingUI("Đang tải dữ liệu Tỉnh...", 50);
+                updateLoadingUI("Đang tải dữ liệu Phường xã...", 50);
                 provinceGeoData = await fetchSupabaseGeoJSON(GEOJSON_PROV);
             }
 
@@ -418,7 +418,7 @@
                 gadmLookupNorm[`${normalizeAdminName(p)}|${normalizeAdminName(d)}|${normalizeAdminName(w)}`] = true;
             });
 
-            updateLoadingUI("Đang đọc file Excel...", 70);
+            updateLoadingUI("Đang đọc dữ liệu hệ thống...", 70);
             const { data: excelUrl, error: excelError } = await supabaseClient.storage.from(MAP_BUCKET).createSignedUrls([FILE_ROUTE], 60);
             if (excelError || !excelUrl || excelUrl.length === 0 || excelUrl[0].error) throw new Error("Lỗi tải Excel");
 
@@ -606,6 +606,8 @@
 
     function aggregateDataWithFilters(selCats, selNPPs, selAreas, selProvs) {
         let districtGroups = {};
+        let displayMonths = getDisplayMonths();
+        let latestMonth = displayMonths.length > 0 ? displayMonths[displayMonths.length - 1] : "";
 
         rawCustomerRecords.forEach(r => {
             if (selCats.length > 0 && !selCats.includes(r.cat)) return;
@@ -617,7 +619,7 @@
             if (!districtGroups[distKey]) {
                 districtGroups[distKey] = { 
                     prov: r.prov, dist: r.dist, normProv: r.normProv, normDist: r.normDist, 
-                    cusOrderedSet: new Set(), monthRev: {}, totalRev: 0, wards: {} 
+                    cusOrderedByMonth: {}, monthRev: {}, totalRev: 0, wards: {} 
                 };
             }
 
@@ -625,12 +627,19 @@
             if (!districtGroups[distKey].wards[wardKey]) {
                 districtGroups[distKey].wards[wardKey] = { 
                     wardName: r.ward, normWard: wardKey, 
-                    cusOrderedSet: new Set(), monthRev: {}, totalRev: 0 
+                    cusOrderedByMonth: {}, monthRev: {}, totalRev: 0 
                 };
             }
 
-            districtGroups[distKey].cusOrderedSet.add(r.cusCode);
-            districtGroups[distKey].wards[wardKey].cusOrderedSet.add(r.cusCode);
+            if (!districtGroups[distKey].cusOrderedByMonth[r.month]) {
+                districtGroups[distKey].cusOrderedByMonth[r.month] = new Set();
+            }
+            if (!districtGroups[distKey].wards[wardKey].cusOrderedByMonth[r.month]) {
+                districtGroups[distKey].wards[wardKey].cusOrderedByMonth[r.month] = new Set();
+            }
+
+            districtGroups[distKey].cusOrderedByMonth[r.month].add(r.cusCode);
+            districtGroups[distKey].wards[wardKey].cusOrderedByMonth[r.month].add(r.cusCode);
             
             districtGroups[distKey].totalRev += r.total;
             districtGroups[distKey].monthRev[r.month] = (districtGroups[distKey].monthRev[r.month] || 0) + r.total;
@@ -641,13 +650,16 @@
 
         return Object.values(districtGroups).map(d => {
             let wardArr = Object.values(d.wards).map(w => ({ 
-                wardName: w.wardName, normWard: w.normWard, ordered: w.cusOrderedSet.size, 
+                wardName: w.wardName, normWard: w.normWard, 
+                ordered: w.cusOrderedByMonth[latestMonth] ? w.cusOrderedByMonth[latestMonth].size : 0, 
                 monthRev: w.monthRev, totalRev: w.totalRev 
             })).sort((a,b) => b.totalRev - a.totalRev);
             
             return { 
                 prov: d.prov, dist: d.dist, normProv: d.normProv, normDist: d.normDist, 
-                ordered: d.cusOrderedSet.size, monthRev: d.monthRev, totalRev: d.totalRev, wardsData: wardArr 
+                cusSet: d.cusOrderedByMonth[latestMonth] || new Set(), // Giữ lại CusSet cho việc sum tổng thể chính xác
+                ordered: d.cusOrderedByMonth[latestMonth] ? d.cusOrderedByMonth[latestMonth].size : 0, 
+                monthRev: d.monthRev, totalRev: d.totalRev, wardsData: wardArr 
             };
         });
     }
@@ -687,7 +699,7 @@
         let uniqueProvs = new Set();
         let uniqueDists = new Set();
         let totalWardsCount = 0;
-        let sumOrdered = 0;
+        let globalOrderedSet = new Set(); // Để chứa dữ liệu Distinct Cuscode Tổng Khắp Toàn Quốc
         let sumTotalRev = 0;
         let sumMonthRev = {};
 
@@ -699,7 +711,10 @@
             uniqueProvs.add(p.normProv);
             uniqueDists.add(p.normProv + '|' + p.normDist);
             totalWardsCount += p.wardsData.length;
-            sumOrdered += p.ordered;
+            
+            // Push distinct code toàn quốc
+            if(p.cusSet) p.cusSet.forEach(c => globalOrderedSet.add(c));
+            
             sumTotalRev += p.totalRev;
 
             let distId = `dist_${index}`; 
@@ -741,7 +756,7 @@
                 <td>${uniqueProvs.size} ${langObj.thProv}</td>
                 <td>${uniqueDists.size} ${langObj.thDist}</td>
                 <td>${totalWardsCount} ${langObj.thWard}</td>
-                <td class="num-right text-orange">${formatNumber(sumOrdered)}</td>
+                <td class="num-right text-orange">${formatNumber(globalOrderedSet.size)}</td>
                 ${footMonthTds}
                 <td class="num-right text-green">${formatNumber(sumTotalRev)}</td>
             </tr>
@@ -813,8 +828,9 @@
             else {
                 let provAgg = {};
                 currentAggregatedData.forEach(d => {
-                    if (!provAgg[d.normProv]) provAgg[d.normProv] = { ordered: 0, totalRev: 0, latestRev: 0, realName: d.prov };
-                    provAgg[d.normProv].ordered += d.ordered; 
+                    if (!provAgg[d.normProv]) provAgg[d.normProv] = { cusSet: new Set(), ordered: 0, totalRev: 0, latestRev: 0, realName: d.prov };
+                    if(d.cusSet) d.cusSet.forEach(c => provAgg[d.normProv].cusSet.add(c));
+                    provAgg[d.normProv].ordered = provAgg[d.normProv].cusSet.size;
                     provAgg[d.normProv].totalRev += d.totalRev;
                     provAgg[d.normProv].latestRev += (d.monthRev[latestMonth] || 0);
                 });
